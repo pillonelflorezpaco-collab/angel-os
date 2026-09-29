@@ -1,3 +1,5 @@
+import { readerIdentity, IDENTITY_REQUIRED } from "../readerIdentity.js";
+import type { IdentityContext } from "../../identity/index.js";
 import { gatewayExecute } from "../../gateway/index.js";
 import { listActivities, summarizeActivities } from "../../activity/service.js";
 import { localRangeBounds, formatLocalTime, type LocalRange } from "../../core/time.js";
@@ -21,14 +23,16 @@ function label(type: string): string {
 }
 
 export interface ActivityQueryInput {
-  principalId: string;
   agentKey: string;
   range: LocalRange;
   types?: ActivityType[];
   limit?: number;
 }
 
-export async function listActivity(input: ActivityQueryInput): Promise<Result> {
+export async function listActivity(identity: IdentityContext, raw: ActivityQueryInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   const result = await gatewayExecute(
     {
       principalId: input.principalId,
@@ -59,7 +63,10 @@ export async function listActivity(input: ActivityQueryInput): Promise<Result> {
   };
 }
 
-export async function summarizeActivity(input: Omit<ActivityQueryInput, "types" | "limit">): Promise<Result> {
+export async function summarizeActivity(identity: IdentityContext, raw: Omit<ActivityQueryInput, "types" | "limit">): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   const result = await gatewayExecute(
     {
       principalId: input.principalId,

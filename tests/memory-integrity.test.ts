@@ -108,7 +108,7 @@ describe("fact vs inference", () => {
   });
 
   it("Jarvis's memory answer never presents the inference as a fact", async () => {
-    const result = await new JarvisCore().handle({ principalId, input: "what do i know about fitest" });
+    const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input: "what do i know about fitest" });
     expect(result.status).toBe("EXECUTED");
     expect(result.message).toContain("[fact] fitest likes window seats");
     expect(result.message).toContain("[inference, unconfirmed] fitest probably prefers mornings");

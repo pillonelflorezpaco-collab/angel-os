@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { setPermission } from "../gateway/permissions/index.js";
@@ -98,8 +99,7 @@ describe("skills/integrations/calendar.ts", () => {
 
   it("READ denied (no permission row): connector is never called", async () => {
     fakeConnector.listEventsSpy.mockClear();
-    const result = await calendarSkill.listEvents({
-      principalId,
+    const result = await calendarSkill.listEvents(identityFor(principalId), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -122,8 +122,7 @@ describe("skills/integrations/calendar.ts", () => {
       });
     }
     fakeConnector.listEventsSpy.mockClear();
-    const result = await calendarSkill.listEvents({
-      principalId,
+    const result = await calendarSkill.listEvents(identityFor(principalId), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -139,8 +138,7 @@ describe("skills/integrations/calendar.ts", () => {
     const connection = await db.connection.create({
       data: { principalId, provider: "google", externalAccountId: `${principalId}@no-cred.example`, status: "ACTIVE" },
     });
-    const result = await calendarSkill.listEvents({
-      principalId,
+    const result = await calendarSkill.listEvents(identityFor(principalId), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -159,8 +157,7 @@ describe("skills/integrations/calendar.ts", () => {
     });
 
     fakeConnector.listEventsSpy.mockClear();
-    const result = await calendarSkill.listEvents({
-      principalId,
+    const result = await calendarSkill.listEvents(identityFor(principalId), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -188,8 +185,7 @@ describe("skills/integrations/calendar.ts", () => {
     fakeConnector.listEventsSpy.mockImplementationOnce(async () => {
       throw new Error("simulated Google API outage");
     });
-    const result = await calendarSkill.listEvents({
-      principalId,
+    const result = await calendarSkill.listEvents(identityFor(principalId), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -204,7 +200,7 @@ describe("skills/integrations/calendar.ts", () => {
   it("Jarvis Core resolves 'What do I have today?' to the calendar skill", async () => {
     const jarvis = new JarvisCore();
     fakeConnector.listEventsSpy.mockClear();
-    const result = await jarvis.handle({ principalId, input: "What do I have today?" });
+    const result = await jarvis.handle({ principalId, identity: identityFor(principalId), input: "What do I have today?" });
     expect(result.status).toBe("EXECUTED");
     expect(result.message).toContain("Today's calendar");
     expect(result.message).toContain("Gym");
@@ -336,8 +332,7 @@ describe("two-principal isolation — calendar connections and credentials", () 
 
     // A has no connection at all — must fail with ConnectionMissingError,
     // never accidentally pick up B's.
-    const result = await calendarSkill.listEvents({
-      principalId: principalA,
+    const result = await calendarSkill.listEvents(identityFor(principalA), {
       agentKey,
       calendarId: "primary",
       timeMin: new Date(),
@@ -355,11 +350,11 @@ describe("two-principal isolation — calendar connections and credentials", () 
     });
 
     fakeConnector.listEventsSpy.mockClear();
-    await calendarSkill.listEvents({ principalId: principalA, agentKey, calendarId: "primary", timeMin: new Date(), timeMax: new Date() });
+    await calendarSkill.listEvents(identityFor(principalA), { agentKey, calendarId: "primary", timeMin: new Date(), timeMax: new Date() });
     const [credA] = fakeConnector.listEventsSpy.mock.calls[fakeConnector.listEventsSpy.mock.calls.length - 1];
     expect(credA.accessToken).toBe("a-access-token");
 
-    await calendarSkill.listEvents({ principalId: principalB, agentKey, calendarId: "primary", timeMin: new Date(), timeMax: new Date() });
+    await calendarSkill.listEvents(identityFor(principalB), { agentKey, calendarId: "primary", timeMin: new Date(), timeMax: new Date() });
     const [credB] = fakeConnector.listEventsSpy.mock.calls[fakeConnector.listEventsSpy.mock.calls.length - 1];
     expect(credB.accessToken).toBe("b-only-access-token");
     expect(credB.accessToken).not.toBe(credA.accessToken);

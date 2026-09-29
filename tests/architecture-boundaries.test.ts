@@ -180,6 +180,14 @@ describe("execution-path architecture boundaries", () => {
       expect(importersOf(/^skills\/system\/apiActions(\.js)?$/)).toEqual(["api/lifeRoutes.ts"]);
     });
 
+    it("no skill takes a caller-supplied principalId: every skill input is identity-based (the principal comes from the explicit IdentityContext)", () => {
+      const offenders = [...code.entries()]
+        .filter(([f]) => f.startsWith("skills/"))
+        .filter(([, src]) => /export interface \w+[^{]*\{[^}]*\bprincipalId\b[^}]*\}/.test(src.replace(/"principalId"/g, "")))
+        .map(([f]) => f);
+      expect(offenders).toEqual([]);
+    });
+
     it("the gateway contains no write allow-list", () => {
       expect(/ALLOWLIST|isLegacyWriteAllowed/i.test(code.get("gateway/index.ts")!)).toBe(false);
     });

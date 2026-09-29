@@ -126,3 +126,24 @@ describe("Jarvis Core — deterministic request flow", () => {
     expect(result.status).toBe("FAILED");
   });
 });
+
+describe("Jarvis Core: read intents need an explicit identity and one principal", () => {
+  it("every read intent fails closed without an identity, and a request whose principalId disagrees with its identity is refused", async () => {
+    const { JarvisCore } = await import("../core/index.js");
+    const { identityFor } = await import("./helpers/fakeActions.js");
+    const { createPrincipal, deletePrincipal } = await import("./helpers/fixtures.js");
+    const p = (await createPrincipal("Core identity A")).id;
+    const q = (await createPrincipal("Core identity B")).id;
+    try {
+      const core = new JarvisCore();
+      for (const input of ["what are my tasks", "what are my reminders", "what happened today", "what have i done this week", "what do i know about x", "what did i decide about x", "What do I have today?"]) {
+        const r = await core.handle({ principalId: p, input });
+        expect(r.status, input).toBe("FAILED");
+        expect(r.message, input).toMatch(/without knowing who you are/);
+      }
+      const mismatch = await core.handle({ principalId: p, identity: identityFor(q), input: "what are my tasks" });
+      expect(mismatch.status).toBe("FAILED");
+      expect(mismatch.message).toMatch(/without knowing who you are/);
+    } finally { await deletePrincipal(p); await deletePrincipal(q); }
+  });
+});

@@ -1,3 +1,5 @@
+import { readerIdentity, IDENTITY_REQUIRED } from "../readerIdentity.js";
+import type { IdentityContext } from "../../identity/index.js";
 import { withConnectionRefreshLock } from "../../connectors/service/refreshLock.js";
 import { getDb } from "../../db/client/index.js";
 import { gatewayExecute } from "../../gateway/index.js";
@@ -174,11 +176,13 @@ async function withGoogleCalendar<T>(
 }
 
 export interface CalendarSkillInput {
-  principalId: string;
   agentKey: string;
 }
 
-export async function listCalendars(input: CalendarSkillInput): Promise<Result> {
+export async function listCalendars(identity: IdentityContext, raw: CalendarSkillInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     { principalId: input.principalId, agentKey: input.agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: ACTION, parameters: {} },
     () => withGoogleCalendar(input.principalId, (connector, credential) => connector.listCalendars(credential)),
@@ -192,7 +196,10 @@ export interface ListEventsInput extends CalendarSkillInput {
   timeMax: Date;
 }
 
-export async function listEvents(input: ListEventsInput): Promise<Result> {
+export async function listEvents(identity: IdentityContext, raw: ListEventsInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     {
       principalId: input.principalId,
@@ -215,7 +222,10 @@ export interface GetEventInput extends CalendarSkillInput {
   eventId: string;
 }
 
-export async function getEvent(input: GetEventInput): Promise<Result> {
+export async function getEvent(identity: IdentityContext, raw: GetEventInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     {
       principalId: input.principalId,
@@ -243,7 +253,10 @@ export interface TodayResult {
  * calendar. "Today" is the principal's local day in their configured
  * timezone, never the server's day.
  */
-export async function today(input: CalendarSkillInput): Promise<Result> {
+export async function today(identity: IdentityContext, raw: CalendarSkillInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     { principalId: input.principalId, agentKey: input.agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: ACTION, parameters: { query: "today" } },
     () =>

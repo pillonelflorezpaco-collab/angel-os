@@ -99,3 +99,11 @@ surface with no consumer, so it is deliberately **not** built. New connectors/au
 call is rejected and the connection was wrongly marked ERROR. Refresh is now single-flight per connection (`connectors/service/refreshLock.ts`): an in-process shared promise plus a
 transaction-scoped Postgres advisory lock (auto-released on commit/rollback/disconnect), and the caller re-reads the credential after acquiring the lock so a refresh done elsewhere is reused.
 Failure is reported to every waiting caller, the connection is marked ERROR once, and the lock is never left held. Still accepted debt: the refresh remains a maintenance write inside the READ lane.
+
+# Hardening pass (BUILD #19): READ skills take an identity, not a principalId
+
+The legacy READ skills (`listTasks`, `listReminders`, memory `search`/`getMemoryById`/`memoryHistory`, `listActivity`/`summarizeActivity`, `queryDecisions`, and the four calendar reads)
+used to take `{principalId, agentKey}`. They now take `(identity: IdentityContext, {agentKey, …})` and derive the principal only from the validated identity
+(`skills/readerIdentity.ts`): a missing or malformed identity fails closed before anything is read or audited, and a smuggled `principalId` is overridden.
+Jarvis Core follows: every read intent requires an identity, and a request whose `principalId` disagrees with its identity is refused. A boundary test now forbids any
+`principalId` field in a skill input type. Debt removed: "legacy READ skills taking principalId and agentKey" (the `agentKey` is still a parameter of the READ lane by design).

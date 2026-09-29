@@ -238,7 +238,7 @@ describe("two-principal isolation", () => {
     it("A cannot see B's tasks through listTasks", async () => {
       await grant(principalB, JARVIS_AGENT_KEY, TASKS_SKILL, TASKS_RESOURCE, "CREATE_TASK", "WRITE");
       expect((await createTask(identityFor(principalB), { title: "B's private task" })).status).toBe("EXECUTED");
-      const aResult = await listTasks({ principalId: principalA, agentKey });
+      const aResult = await listTasks(identityFor(principalA), { agentKey });
       expect(aResult.status).toBe("EXECUTED");
       const aTasks = aResult.data as { title: string }[];
       expect(aTasks.some((t) => t.title === "B's private task")).toBe(false);
@@ -253,7 +253,7 @@ describe("two-principal isolation", () => {
         remindAt: new Date(Date.now() + 60_000),
       });
       expect(created.status).toBe("EXECUTED");
-      const aResult = await listReminders({ principalId: principalA, agentKey });
+      const aResult = await listReminders(identityFor(principalA), { agentKey });
       expect(aResult.status).toBe("EXECUTED");
       const aReminders = aResult.data as { message: string }[];
       expect(aReminders.some((r) => r.message === "B's private reminder")).toBe(false);
@@ -270,7 +270,7 @@ describe("two-principal isolation", () => {
           decision: "Give myself a raise",
         },
       });
-      const aResult = await queryDecisions({ principalId: principalA, agentKey, topic: "salary" });
+      const aResult = await queryDecisions(identityFor(principalA), { agentKey, topic: "salary" });
       expect(aResult.status).toBe("EXECUTED");
       const aDecisions = aResult.data as { title: string }[];
       expect(aDecisions.some((d) => d.title.includes("B's confidential"))).toBe(false);

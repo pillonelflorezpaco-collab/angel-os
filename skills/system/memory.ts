@@ -1,3 +1,4 @@
+import { readerIdentity, IDENTITY_REQUIRED } from "../readerIdentity.js";
 import { getMemoryProvider } from "../../memory/index.js";
 import { MemoryNotFoundError, type AddMemoryInput, type MemoryRecord, type SearchMemoryInput } from "../../memory/types/index.js";
 import { PublicError } from "../../core/errors.js";
@@ -148,12 +149,14 @@ export function remember(identity: IdentityContext, memory: RememberInput): Prom
 }
 
 export interface SearchInput {
-  principalId: string;
   agentKey: string;
   query: Omit<SearchMemoryInput, "principalId">;
 }
 
-export async function search(input: SearchInput): Promise<Result> {
+export async function search(identity: IdentityContext, raw: SearchInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     {
       principalId: input.principalId,
@@ -298,12 +301,14 @@ export const retractMemory = (identity: IdentityContext, input: { memoryId: stri
 // ── Reads (READ lane, MEMORY_READ): the owner can always inspect their own memory and its history ──
 
 export interface MemoryLookupInput {
-  principalId: string;
   agentKey: string;
   memoryId: string;
 }
 
-export async function getMemoryById(input: MemoryLookupInput): Promise<Result> {
+export async function getMemoryById(identity: IdentityContext, raw: MemoryLookupInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     { principalId: input.principalId, agentKey: input.agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: "MEMORY_READ", parameters: { op: "get", memoryId: input.memoryId } },
     () => ownedOrNotFound(() => getMemoryProvider().getMemory(input.principalId, input.memoryId)),
@@ -311,7 +316,10 @@ export async function getMemoryById(input: MemoryLookupInput): Promise<Result> {
   );
 }
 
-export async function memoryHistory(input: MemoryLookupInput): Promise<Result> {
+export async function memoryHistory(identity: IdentityContext, raw: MemoryLookupInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   return gatewayExecute(
     { principalId: input.principalId, agentKey: input.agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: "MEMORY_READ", parameters: { op: "history", memoryId: input.memoryId } },
     () => ownedOrNotFound(() => getMemoryProvider().listRevisions(input.principalId, input.memoryId)),

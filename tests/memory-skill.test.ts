@@ -37,7 +37,7 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
     // principal — confirms fail-closed default end to end through the real
     // skill module the API route now calls, instead of the old direct
     // MemoryProvider call that had no gate at all.
-    const result = await memorySkill.search({ principalId, agentKey, query: { query: "secret" } });
+    const result = await memorySkill.search(identityFor(principalId), { agentKey, query: { query: "secret" } });
     expect(result.status).toBe("DENIED");
   });
 
@@ -52,7 +52,7 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
       state: "ALLOWED",
     });
 
-    const searchResult = await memorySkill.search({ principalId, agentKey, query: { query: "anything" } });
+    const searchResult = await memorySkill.search(identityFor(principalId), { agentKey, query: { query: "anything" } });
     expect(searchResult.status).toBe("EXECUTED");
 
     const rememberResult = await memorySkill.remember(identityFor(principalId), { type: "FACT", content: "should be denied", source: "test" });
@@ -64,7 +64,7 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
     const rememberResult2 = await memorySkill.remember(identityFor(principalId), { type: "FACT", content: "now allowed", source: "test" });
     expect(rememberResult2.status).toBe("EXECUTED");
 
-    const found = await memorySkill.search({ principalId, agentKey, query: { query: "now allowed" } });
+    const found = await memorySkill.search(identityFor(principalId), { agentKey, query: { query: "now allowed" } });
     expect(found.status).toBe("EXECUTED");
     const memories = found.data as { content: string }[];
     expect(memories.some((m) => m.content === "now allowed")).toBe(true);

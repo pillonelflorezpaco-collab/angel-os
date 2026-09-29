@@ -57,12 +57,12 @@ export class DeterministicContextEngine implements ContextEngine {
     const perTerm = <T>(fn: (term: string) => Promise<Result>): Promise<Result[]> => Promise.all(searchTerms.map((t) => fn(t)));
 
     const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult, lifeResult, futureResult, learningResult] = await Promise.all([
-      listTasks({ principalId, agentKey }),
-      perTerm((term) => searchMemory({ principalId, agentKey, query: { query: term, limit: L.termResults, asOf } })),
+      listTasks(identity, { agentKey }),
+      perTerm((term) => searchMemory(identity, { agentKey, query: { query: term, limit: L.termResults, asOf } })),
       perTerm((term) => searchKnowledgeItems(identity, { agentKey, query: term, limit: L.termResults })),
       perTerm((term) => searchKnowledge(identity, { agentKey, query: term, limit: 2 })),
-      terms.length ? Promise.all(terms.map((topic) => queryDecisions({ principalId, agentKey, topic }))) : Promise.resolve([] as Result[]),
-      listActivity({ principalId, agentKey, range: "week", limit: L.activity }),
+      terms.length ? Promise.all(terms.map((topic) => queryDecisions(identity, { agentKey, topic }))) : Promise.resolve([] as Result[]),
+      listActivity(identity, { agentKey, range: "week", limit: L.activity }),
       readLifeOverview(identity, { agentKey }),
       readFutureOverview(identity, { agentKey }),
       readLearningOverview(identity, { agentKey, now }),

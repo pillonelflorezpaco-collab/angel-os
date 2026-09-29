@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll, vi, afterEach } from "vitest";
 import { ActivityType } from "@prisma/client";
 import { getDb, disconnectDb } from "../db/client/index.js";
@@ -66,7 +67,7 @@ describe("activity vs audit are separate systems", () => {
     await grant(a, agentKey, ACTIVITY_SKILL, ACTIVITY_RESOURCE, "ACTIVITY_READ", "READ");
     const before = await getDb().activity.count({ where: { principalId: a } });
     const auditBefore = await getDb().auditLog.count({ where: { principalId: a } });
-    await listActivity({ principalId: a, agentKey, range: "today" });
+    await listActivity(identityFor(a), { agentKey, range: "today" });
     expect(await getDb().activity.count({ where: { principalId: a } })).toBe(before);
     expect(await getDb().auditLog.count({ where: { principalId: a } })).toBeGreaterThan(auditBefore);
   });
@@ -133,10 +134,10 @@ describe("activity reads: permission, isolation, ranges", () => {
   });
 
   it("without a permission row, reads are DENIED and return no data", async () => {
-    const result = await listActivity({ principalId: a, agentKey, range: "week" });
+    const result = await listActivity(identityFor(a), { agentKey, range: "week" });
     expect(result.status).toBe("DENIED");
     expect(result.data).toBeUndefined();
-    expect((await summarizeActivity({ principalId: a, agentKey, range: "week" })).status).toBe("DENIED");
+    expect((await summarizeActivity(identityFor(a), { agentKey, range: "week" })).status).toBe("DENIED");
   });
 
   it("with the permission: today / yesterday / week are computed in the user's timezone", async () => {
@@ -145,7 +146,7 @@ describe("activity reads: permission, isolation, ranges", () => {
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
 
     const summaries = async (range: "today" | "yesterday" | "week") =>
-      ((await listActivity({ principalId: a, agentKey, range })).data as { summary: string }[]).map((r) => r.summary).sort();
+      ((await listActivity(identityFor(a), { agentKey, range })).data as { summary: string }[]).map((r) => r.summary).sort();
 
     expect(await summaries("today")).toEqual(["This morning"]);
     expect(await summaries("yesterday")).toEqual(["Monday evening", "Monday just after midnight"]);
@@ -171,8 +172,8 @@ describe("activity reads: permission, isolation, ranges", () => {
 
   it("principal isolation: A never sees B's activity and vice versa", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
-    const asA = JSON.stringify((await listActivity({ principalId: a, agentKey, range: "today" })).data);
-    const asB = JSON.stringify((await listActivity({ principalId: b, agentKey, range: "today" })).data);
+    const asA = JSON.stringify((await listActivity(identityFor(a), { agentKey, range: "today" })).data);
+    const asB = JSON.stringify((await listActivity(identityFor(b), { agentKey, range: "today" })).data);
     expect(asA).not.toContain("B-only secret achievement");
     expect(asB).toContain("B-only secret achievement");
     expect(asB).not.toContain("This morning");
@@ -188,9 +189,9 @@ describe("activity reads: permission, isolation, ranges", () => {
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
     await grant(a, JARVIS_AGENT_KEY, ACTIVITY_SKILL, ACTIVITY_RESOURCE, "ACTIVITY_READ", "READ");
     const jarvis = new JarvisCore();
-    const today = await jarvis.handle({ principalId: a, input: "What happened today?" });
+    const today = await jarvis.handle({ principalId: a, identity: identityFor(a), input: "What happened today?" });
     expect(today.message).toMatch(/^Today — 1 activity:\n• 08:00 /);
-    const week = await jarvis.handle({ principalId: a, input: "What have I done this week?" });
+    const week = await jarvis.handle({ principalId: a, identity: identityFor(a), input: "What have I done this week?" });
     expect(week.message).toContain("This week: 3 recorded.");
     expect(week.message).toContain("learning ×2");
   });

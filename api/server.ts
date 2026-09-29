@@ -123,7 +123,7 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     "/tasks",
     asyncRoute(async (req, res) => {
-      res.json(await listTasks({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY }));
+      res.json(await listTasks(identityOf(req), { agentKey: JARVIS_AGENT_KEY }));
     })
   );
 
@@ -150,7 +150,7 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     "/reminders",
     asyncRoute(async (req, res) => {
-      res.json(await listReminders({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY }));
+      res.json(await listReminders(identityOf(req), { agentKey: JARVIS_AGENT_KEY }));
     })
   );
 
@@ -185,7 +185,7 @@ export function createApp(options: AppOptions = {}) {
       const parsed = memorySearchSchema.safeParse(req.query);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
       const { q, type, subject } = parsed.data;
-      res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query: q, ...(type ? { type } : {}), ...(subject ? { subject } : {}) } }));
+      res.json(await searchMemory(identityOf(req), { agentKey: JARVIS_AGENT_KEY, query: { query: q, ...(type ? { type } : {}), ...(subject ? { subject } : {}) } }));
     })
   );
 
@@ -250,7 +250,7 @@ export function createApp(options: AppOptions = {}) {
     asyncRoute(async (req, res) => {
       const parsed = activityQuerySchema.safeParse(req.query);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-      res.json(await listActivity({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, ...parsed.data }));
+      res.json(await listActivity(identityOf(req), { agentKey: JARVIS_AGENT_KEY, ...parsed.data }));
     })
   );
   api.get(
@@ -258,7 +258,7 @@ export function createApp(options: AppOptions = {}) {
     asyncRoute(async (req, res) => {
       const parsed = activityQuerySchema.pick({ range: true }).safeParse(req.query);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-      res.json(await summarizeActivity({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, range: parsed.data.range }));
+      res.json(await summarizeActivity(identityOf(req), { agentKey: JARVIS_AGENT_KEY, range: parsed.data.range }));
     })
   );
 

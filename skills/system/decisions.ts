@@ -1,3 +1,4 @@
+import { readerIdentity, IDENTITY_REQUIRED } from "../readerIdentity.js";
 import { z } from "zod";
 import { proposeAction } from "../../gateway/index.js";
 import { assertExplicitIdentity, type IdentityContext } from "../../identity/index.js";
@@ -15,12 +16,14 @@ export const SKILL_KEY = "system.decisions";
 export const RESOURCE = "angel:decisions";
 
 export interface QueryDecisionsInput {
-  principalId: string;
   agentKey: string;
   topic: string;
 }
 
-export async function queryDecisions(input: QueryDecisionsInput): Promise<Result> {
+export async function queryDecisions(identity: IdentityContext, raw: QueryDecisionsInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   const result = await gatewayExecute(
     {
       principalId: input.principalId,

@@ -23,9 +23,9 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
   let b: string;
   const idA = (s: "GUIDEHUB" | "VOICE" | "TELEGRAM" = "GUIDEHUB") => identityFor(a, s);
   const raw = (id: string) => getDb().memory.findUnique({ where: { id } });
-  const readA = { principalId: "", agentKey: JARVIS_AGENT_KEY };
+  const readA = { agentKey: JARVIS_AGENT_KEY };
   const searchA = async (query: string, extra: Record<string, unknown> = {}) => {
-    const r = await search({ principalId: a, agentKey: JARVIS_AGENT_KEY, query: { query, ...extra } });
+    const r = await search(identityFor(a), { agentKey: JARVIS_AGENT_KEY, query: { query, ...extra } });
     return (r.data as { id: string; content: string }[] | undefined) ?? [];
   };
   /** Creates a memory through the real skill path and returns its id. */
@@ -43,7 +43,6 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
   beforeAll(async () => {
     a = (await createPrincipal("Memory OS A")).id;
     b = (await createPrincipal("Memory OS B")).id;
-    readA.principalId = a;
     for (const p of [a, b]) {
       await grant(p, JARVIS_AGENT_KEY, SKILL, RES, "MEMORY_READ", "READ");
       await grant(p, JARVIS_AGENT_KEY, SKILL, RES, "MEMORY_CREATE", "WRITE");
@@ -211,10 +210,10 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
       const id = await create({ type: "FACT", content: "hist v1", source: "t" });
       await approve(await updateMemory(idA(), { memoryId: id, content: "hist v2" }));
       await approve(await updateMemory(idA(), { memoryId: id, content: "hist v3" }));
-      const h = await memoryHistory({ ...readA, memoryId: id });
+      const h = await memoryHistory(identityFor(a), { ...readA, memoryId: id });
       expect(h.status).toBe("EXECUTED");
       expect((h.data as { previousContent: string }[]).map((r) => r.previousContent)).toEqual(["hist v2", "hist v1"]);
-      const got = await getMemoryById({ ...readA, memoryId: id });
+      const got = await getMemoryById(identityFor(a), { ...readA, memoryId: id });
       expect((got.data as { content: string }).content).toBe("hist v3");
       const audit = (await listAuditLog(a, 400)).filter((e) => e.eventType === "ACTION_EXECUTED" && e.resource === RES);
       expect(audit.length).toBeGreaterThan(0);
@@ -273,7 +272,7 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
         expect(m).toMatchObject({ status: "RETRACTED", retractedReason: "it was a typo", content: "ret-x the sky is green" });
         expect(m.retractedAt).not.toBeNull();
         expect((await searchA("ret-x")).map((r) => r.id)).not.toContain(id);
-        expect(((await getMemoryById({ ...readA, memoryId: id })).data as { status: string }).status).toBe("RETRACTED"); // owner can still inspect it
+        expect(((await getMemoryById(identityFor(a), { ...readA, memoryId: id })).data as { status: string }).status).toBe("RETRACTED"); // owner can still inspect it
         expect(await getDb().memoryRevision.count({ where: { memoryId: id, changeType: "RETRACT" } })).toBe(1);
         // terminal: cannot be updated, confirmed or retracted again
         for (const p of [await updateMemory(idA(), { memoryId: id, content: "revive" }), await confirmMemory(idA(), { memoryId: id }), await retractMemory(idA(), { memoryId: id, reason: "again" })]) {
@@ -298,10 +297,10 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
     it("another principal's memory cannot be read, inspected, historied or retracted", async () => {
       const id = await create({ type: "FACT", content: "iso secret content", source: "t" });
       await approve(await updateMemory(idA(), { memoryId: id, content: "iso secret v2" }));
-      const asB = { principalId: b, agentKey: JARVIS_AGENT_KEY, memoryId: id };
-      expect((await getMemoryById(asB)).status).toBe("FAILED");
-      expect((await memoryHistory(asB)).status).toBe("FAILED");
-      expect(JSON.stringify(await getMemoryById(asB))).not.toContain("iso secret");
+      const asB = { agentKey: JARVIS_AGENT_KEY, memoryId: id };
+      expect((await getMemoryById(identityFor(b), asB)).status).toBe("FAILED");
+      expect((await memoryHistory(identityFor(b), asB)).status).toBe("FAILED");
+      expect(JSON.stringify(await getMemoryById(identityFor(b), asB))).not.toContain("iso secret");
       const r = await retractMemory(identityFor(b), { memoryId: id, reason: "attack" });
       const out = await decideApproval(identityFor(b), r.approvalId!, "APPROVED");
       expect(out.executed).toBe(false);
@@ -309,7 +308,7 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
       expect((await raw(id))!.status).toBe("ACTIVE");
       expect(await getDb().memoryRevision.count({ where: { memoryId: id, principalId: b } })).toBe(0);
       expect((await searchA("iso secret")).length).toBeGreaterThan(0);
-      const bSearch = await search({ principalId: b, agentKey: JARVIS_AGENT_KEY, query: { query: "iso secret" } });
+      const bSearch = await search(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: { query: "iso secret" } });
       expect(bSearch.data).toEqual([]);
     });
   });

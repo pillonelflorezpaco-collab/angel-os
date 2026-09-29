@@ -1,3 +1,4 @@
+import { readerIdentity, IDENTITY_REQUIRED } from "../readerIdentity.js";
 import { getDb } from "../../db/client/index.js";
 import { gatewayExecute, proposeAction } from "../../gateway/index.js";
 import type { ActionDefinition } from "../../gateway/index.js";
@@ -153,11 +154,13 @@ export function proposeTaskAction(identity: IdentityContext, action: "TASK_UPDAT
 }
 
 export interface ListTasksInput {
-  principalId: string;
   agentKey: string;
 }
 
-export async function listTasks(input: ListTasksInput): Promise<Result> {
+export async function listTasks(identity: IdentityContext, raw: ListTasksInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   const result = await gatewayExecute(
     {
       principalId: input.principalId,
@@ -273,11 +276,13 @@ export async function createRelativeReminder(identity: IdentityContext, input: C
 }
 
 export interface ListRemindersInput {
-  principalId: string;
   agentKey: string;
 }
 
-export async function listReminders(input: ListRemindersInput): Promise<Result> {
+export async function listReminders(identity: IdentityContext, raw: ListRemindersInput): Promise<Result> {
+  const who = readerIdentity(identity);
+  if (!who) return IDENTITY_REQUIRED;
+  const input = { ...raw, principalId: who.principalId };
   const result = await gatewayExecute(
     {
       principalId: input.principalId,

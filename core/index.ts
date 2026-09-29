@@ -65,6 +65,8 @@ export class JarvisCore {
 
   /** Intent dispatch. Exposed only so tests can exercise handle()'s error boundary. */
   async dispatch(request: JarvisRequest): Promise<Result> {
+    // Two principals in one request (a stale field and the authenticated identity) is a bug or an attack: refuse.
+    if (request.identity && request.identity.principalId !== request.principalId) return NO_IDENTITY;
     const intent = parseIntent(request.input);
 
     switch (intent.name) {
@@ -76,11 +78,8 @@ export class JarvisCore {
 
       case "memory.search": {
         const query = intent.slots.query ?? request.input;
-        const result = await searchMemory({
-          principalId: request.principalId,
-          agentKey: JARVIS_AGENT_KEY,
-          query: { query },
-        });
+        if (!request.identity) return NO_IDENTITY;
+        const result = await searchMemory(request.identity, { agentKey: JARVIS_AGENT_KEY, query: { query } });
         if (result.status !== "EXECUTED") return result;
         const memories = result.data as MemoryRecord[];
         return {
@@ -94,11 +93,8 @@ export class JarvisCore {
 
       case "decision.query": {
         const topic = intent.slots.topic ?? "";
-        return queryDecisions({
-          principalId: request.principalId,
-          agentKey: JARVIS_AGENT_KEY,
-          topic,
-        });
+        if (!request.identity) return NO_IDENTITY;
+        return queryDecisions(request.identity, { agentKey: JARVIS_AGENT_KEY, topic });
       }
 
       case "context.brief": {
@@ -108,16 +104,20 @@ export class JarvisCore {
       }
 
       case "activity.today":
-        return listActivity({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY, range: "today" });
+        if (!request.identity) return NO_IDENTITY;
+        return listActivity(request.identity, { agentKey: JARVIS_AGENT_KEY, range: "today" });
 
       case "activity.week":
-        return summarizeActivity({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY, range: "week" });
+        if (!request.identity) return NO_IDENTITY;
+        return summarizeActivity(request.identity, { agentKey: JARVIS_AGENT_KEY, range: "week" });
 
       case "reminder.list":
-        return listReminders({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY });
+        if (!request.identity) return NO_IDENTITY;
+        return listReminders(request.identity, { agentKey: JARVIS_AGENT_KEY });
 
       case "calendar.today": {
-        const result = await calendarToday({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY });
+        if (!request.identity) return NO_IDENTITY;
+        const result = await calendarToday(request.identity, { agentKey: JARVIS_AGENT_KEY });
         if (result.status !== "EXECUTED") return result;
         const { timeZone, events } = result.data as TodayResult;
         return {
@@ -152,13 +152,13 @@ export class JarvisCore {
     action: string,
     parameters: Record<string, unknown>
   ): Promise<Result> {
-    const principalId = request.principalId;
     switch (action) {
       case "CREATE_TASK":
         if (!request.identity) return NO_IDENTITY;
         return createTask(request.identity, { title: String(parameters.title ?? "Untitled task") });
       case "READ":
-        return listTasks({ principalId, agentKey: JARVIS_AGENT_KEY });
+        if (!request.identity) return NO_IDENTITY;
+        return listTasks(request.identity, { agentKey: JARVIS_AGENT_KEY });
       case "CREATE_REMINDER": {
         const hour = parameters.hour === undefined ? 9 : Number(parameters.hour);
         const minute = parameters.minute === undefined ? 0 : Number(parameters.minute);
