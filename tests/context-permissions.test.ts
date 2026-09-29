@@ -5,6 +5,8 @@ import { LocalMemoryProvider } from "../memory/local/index.js";
 import { listAuditLog } from "../gateway/index.js";
 import { SKILL_KEY as TASKS_SKILL, RESOURCE as TASKS_RESOURCE } from "../skills/system/tasks.js";
 import { SKILL_KEY as MEMORY_SKILL, RESOURCE as MEMORY_RESOURCE } from "../skills/system/memory.js";
+import { SKILL_KEY as KNOWLEDGE_SKILL, RESOURCE as KNOWLEDGE_RESOURCE } from "../skills/system/knowledge.js";
+import { identityFor } from "./helpers/fakeActions.js";
 import { createPrincipal, deletePrincipal, ensureAgent, ensureSkill, grant } from "./helpers/fixtures.js";
 
 /**
@@ -24,6 +26,7 @@ describe("context engine — protected reads go through the permission gateway",
     await ensureAgent(agentKey);
     await ensureSkill(TASKS_SKILL);
     await ensureSkill(MEMORY_SKILL);
+    await ensureSkill(KNOWLEDGE_SKILL);
     const p = await createPrincipal("Context Permissions Principal");
     principalId = p.id;
     await getDb().task.create({ data: { principalId, title: TASK_TITLE } });
@@ -39,18 +42,18 @@ describe("context engine — protected reads go through the permission gateway",
     await disconnectDb();
   });
 
-  it("missing permission: both sections withheld, no protected data returned", async () => {
-    const ctx = await engine.buildContext({ principalId, agentKey, query: "alpha-content" });
+  it("missing permission: every protected section withheld, no protected data returned", async () => {
+    const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.currentTasks).toEqual([]);
     expect(ctx.relevantMemories).toEqual([]);
-    expect(ctx.withheld.sort()).toEqual(["memories", "tasks"]);
+    expect(ctx.withheld.sort()).toEqual(["knowledge", "memories", "tasks"]);
     const serialized = JSON.stringify(ctx);
     expect(serialized).not.toContain(TASK_TITLE);
     expect(serialized).not.toContain(MEMORY_CONTENT);
   });
 
   it("missing permission is audited as ACTION_DENIED for each protected resource", async () => {
-    await engine.buildContext({ principalId, agentKey, query: "alpha-content" });
+    await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     const logs = await listAuditLog(principalId, 50);
     const denied = logs.filter((l) => l.eventType === "ACTION_DENIED").map((l) => l.resource);
     expect(denied).toContain(TASKS_RESOURCE);
@@ -61,18 +64,19 @@ describe("context engine — protected reads go through the permission gateway",
     await grant(principalId, agentKey, TASKS_SKILL, TASKS_RESOURCE, "READ", "READ", "ALLOWED");
     await grant(principalId, agentKey, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_READ", "READ", "DENIED");
 
-    const ctx = await engine.buildContext({ principalId, agentKey, query: "alpha-content" });
+    const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.currentTasks.map((t) => t.title)).toContain(TASK_TITLE);
     expect(ctx.relevantMemories).toEqual([]);
-    expect(ctx.withheld).toEqual(["memories"]);
+    expect(ctx.withheld.sort()).toEqual(["knowledge", "memories"]); // knowledge was never granted either
     expect(JSON.stringify(ctx)).not.toContain(MEMORY_CONTENT);
   });
 
   it("authorized: returns tasks and memories, audits ACTION_EXECUTED, and never writes memory content to the audit log", async () => {
     await grant(principalId, agentKey, TASKS_SKILL, TASKS_RESOURCE, "READ", "READ");
     await grant(principalId, agentKey, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_READ", "READ");
+    await grant(principalId, agentKey, KNOWLEDGE_SKILL, KNOWLEDGE_RESOURCE, "KNOWLEDGE_READ", "READ");
 
-    const ctx = await engine.buildContext({ principalId, agentKey, query: "alpha-content" });
+    const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.withheld).toEqual([]);
     expect(ctx.currentTasks.map((t) => t.title)).toContain(TASK_TITLE);
     expect(ctx.relevantMemories.map((m) => m.content)).toContain(MEMORY_CONTENT);
@@ -86,7 +90,7 @@ describe("context engine — protected reads go through the permission gateway",
 
   it("permissions are per agent: another agent's grant does not authorize this agent", async () => {
     await grant(principalId, "some-other-agent", MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_READ", "READ");
-    const ctx = await engine.buildContext({ principalId, agentKey, query: "alpha-content" });
+    const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.relevantMemories).toEqual([]);
     expect(ctx.withheld).toContain("memories");
     await getDb().agent.delete({ where: { key: "some-other-agent" } }).catch(() => undefined);

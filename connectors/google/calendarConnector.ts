@@ -10,6 +10,8 @@ import type {
 import type { ConnectorCapability, ConnectorHealth } from "../types/index.js";
 import type { FetchFn } from "./oauthClient.js";
 
+/** Upper bound for any single Google call: a hung request must not hang a READ. */
+const REQUEST_TIMEOUT_MS = 10_000;
 const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 
 export class GoogleCalendarApiError extends Error {
@@ -149,6 +151,7 @@ export class GoogleCalendarConnector implements CalendarConnector {
   private async get<T>(url: string, credential: ResolvedCredential): Promise<T> {
     const res = await this.fetchFn(url, {
       headers: { Authorization: `Bearer ${credential.accessToken}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) {
       let detail = "";

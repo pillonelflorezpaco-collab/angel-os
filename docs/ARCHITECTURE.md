@@ -178,7 +178,7 @@ rows in the seed/registry — it never requires changes to `core/`,
 Three skills exist in v0.1, all following the same shape:
 
 - `skills/system/tasks.ts` — `angel:tasks` resource; `READ`, `CREATE_TASK`, `CREATE_REMINDER`.
-- `skills/system/memory.ts` — `angel:memory` resource; `MEMORY_READ`, `MEMORY_WRITE`. Wraps `MemoryProvider` so Jarvis Core (and the `/api/memory/search` route) never call it directly.
+- `skills/system/memory.ts` — `angel:memory` resource; `MEMORY_READ` (READ lane) and the ActionDefinitions `MEMORY_CREATE` (LOW), `MEMORY_UPDATE`, `MEMORY_CONFIRM`, `MEMORY_DELETE` (SENSITIVE, approval on every interface). Wraps `MemoryProvider` so Jarvis Core (and the `/api/memory/search` route) never call it directly.
 - `skills/system/decisions.ts` — `angel:decisions` resource; `DECISION_READ`. Owns the only `db.decision` query path.
 
 ## Connector Layer (`connectors/`)

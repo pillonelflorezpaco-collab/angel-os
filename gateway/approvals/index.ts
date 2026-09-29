@@ -4,6 +4,7 @@ export {
   getApproval,
   decideApproval,
   APPROVAL_MESSAGES,
+  IDENTITY_REQUIRED_MESSAGE,
   DEFAULT_APPROVAL_TTL_MS,
   type ApprovalCode,
   type ApprovalOutcome,

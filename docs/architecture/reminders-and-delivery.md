@@ -13,15 +13,11 @@
 
 `gatewayExecute` now **fails closed**: an `APPROVAL_REQUIRED` permission, an `EXECUTE` (or unknown/missing) category, and any `WRITE` not on the allow-list are refused with `ACTION_DENIED (legacy_path_non_read)` and the closure never runs.
 
-### TEMPORARY compatibility allow-list (`LEGACY_WRITE_ALLOWLIST`, `gateway/index.ts`)
-Exactly two frozen entries, matched as `skill|resource|action`, only ever for category `WRITE`:
-* `system.tasks|angel:tasks|CREATE_TASK` — not yet migrated.
-* `system.memory|angel:memory|MEMORY_WRITE` — still used by `update`/`remove`/`confirm` (no interface calls them). `remember` itself is an ActionDefinition now, under the same action name.
-
-`CREATE_REMINDER` is **not** on it. `tests/execution-guardrails.test.ts` pins the exact list, its immutability and exact matching. **Still to migrate:** `CREATE_TASK`; memory `update/remove/confirm` (destructive — should become SENSITIVE definitions or be removed).
+### The allow-list is gone (Build #8)
+Build #7 kept a two-entry temporary write allow-list (`CREATE_TASK`, `MEMORY_WRITE`). Build #8 migrated both to ActionDefinitions and **deleted the allow-list**: `gatewayExecute` is a READ-only compatibility lane. See `consolidation-build8.md`.
 
 ## B. ActionDefinitions in production
-`skills/manifest.ts` (`registerSkillActions()`) registers `system.tasks/CREATE_REMINDER` and `system.memory/MEMORY_WRITE` (remember). It is called by every composition root (`api/server.ts`, `scripts/telegram.ts`, `scripts/worker.ts`) and by Jarvis Core, so an approval decided in any process finds its definition. Both are WRITE/LOW: **direct** on GuideHub/API/Telegram, **approval** on voice.
+`skills/manifest.ts` (`registerSkillActions()`) registers all production definitions (Build #8: `CREATE_TASK`, `CREATE_REMINDER`, `MEMORY_CREATE/UPDATE/CONFIRM/DELETE`). It is called by every composition root (`api/server.ts`, `scripts/telegram.ts`, `scripts/worker.ts`) and by Jarvis Core, so an approval decided in any process finds its definition. Both are WRITE/LOW: **direct** on GuideHub/API/Telegram, **approval** on voice.
 
 ## C. SYSTEM identity (`identity/system.ts`)
 A normal `IdentityContext` (frozen, in AsyncLocalStorage) with `interfaceSource: "SYSTEM"`, `authMethod: "system"`, bound to **one explicit principal** (`ANGEL_OS_SYSTEM_PRINCIPAL_ID`). It cannot be built without a principal, no API token or external link can carry the SYSTEM interface, and every existing guard applies unchanged (the gateway refuses actions for any other principal; audit/activity rows are stamped `SYSTEM` + the job's request id). Policy treats SYSTEM like voice, stricter: writes need approval, dangerous actions are refused, and SYSTEM can **never approve**. Background code calls `requireSystemIdentity()` and refuses to run otherwise.
@@ -69,7 +65,6 @@ READ direct · LOW write → approval · SENSITIVE → approval · DANGEROUS →
 `TOKEN_CREATED/REVOKED`, `IDENTITY_LINKED/UNLINKED` with actor, principal, target interface, token/link id, outcome — never the token, its hash, or the external account id.
 
 ## Known limitations / not yet migrated
-* `CREATE_TASK` and memory `update/remove/confirm` still on the legacy allow-list.
 * One channel (Telegram), first linked account only; no quiet hours, snooze or recurring reminders.
 * **The real Telegram API has never been exercised**: the Bot API client, the delivery port and the worker are tested against fakes only (no bot token was available). Verify with a real bot before relying on it.
 * **Spring-forward gaps:** a local time that does not exist (e.g. 02:30 on the US spring-forward day) resolves deterministically to the *previous valid instant* (01:30 local) — the reminder fires an hour EARLY, not late. Ambiguous fall-back times resolve to one of the two valid instants.
@@ -77,4 +72,3 @@ READ direct · LOW write → approval · SENSITIVE → approval · DANGEROUS →
 * The Google Calendar token refresh (an external POST plus a credential-store rewrite) still runs inside a READ-permission closure (`skills/integrations/calendar.ts`); only its failures have a dedicated audit event.
 * `GET /api/audit` and `GET /api/approvals*` are still direct reads (not gateway-mediated) and the GuideHub API envelope is still inconsistent — both deferred.
 * The worker is a single polling loop (no leader election needed thanks to the atomic claim, but no metrics).
-* `ActionRequest.parameters` is still unused by `gatewayExecute` (legacy audit rows carry no parameters).

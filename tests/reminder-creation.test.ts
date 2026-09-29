@@ -32,7 +32,7 @@ describe("CREATE_REMINDER as an ActionDefinition: interface policy end to end", 
     b = (await createPrincipal("Reminder Create B", "UTC")).id;
     for (const p of [a, b]) {
       await grant(p, JARVIS_AGENT_KEY, "system.tasks", "angel:tasks", "CREATE_REMINDER", "WRITE");
-      await grant(p, JARVIS_AGENT_KEY, "system.memory", "angel:memory", "MEMORY_WRITE", "WRITE");
+      await grant(p, JARVIS_AGENT_KEY, "system.memory", "angel:memory", "MEMORY_CREATE", "WRITE");
     }
     tgA = 400_000_000 + Math.floor(Math.random() * 400_000_000);
     await getExternalIdentityService().link({ principalId: a, interfaceSource: "TELEGRAM", externalId: String(tgA) });
@@ -153,7 +153,7 @@ describe("CREATE_REMINDER as an ActionDefinition: interface policy end to end", 
       const out = await say("Remember that my locker code is 1234");
       expect(out.speech).toMatch(/needs your approval/);
       expect(await getDb().memory.count({ where: { principalId: a } })).toBe(before);
-      const row = await getDb().approvalRequest.findFirstOrThrow({ where: { principalId: a, action: "MEMORY_WRITE", status: "PENDING" } });
+      const row = await getDb().approvalRequest.findFirstOrThrow({ where: { principalId: a, action: "MEMORY_CREATE", status: "PENDING" } });
       expect((await decideApproval(identityFor(a, "GUIDEHUB"), row.id, "APPROVED")).executed).toBe(true);
       expect(await getDb().memory.count({ where: { principalId: a } })).toBe(before + 1);
     });

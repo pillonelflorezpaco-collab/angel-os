@@ -96,13 +96,13 @@ another (`interfaceSource` vs `decidedVia` are both recorded).
 Audit gets every lifecycle event (`APPROVAL_CREATED/APPROVED/DENIED/EXPIRED/CONSUMED`, `ACTION_EXECUTION_STARTED/SUCCEEDED/FAILED`) with principal, interface, request id — never parameters or raw errors. **Activity** (user life-history) is untouched: it is written only by real skills when something meaningful happens; the test actions write none.
 
 ## Build #7 additions
-* The legacy closure path is READ-only (plus a two-entry temporary allow-list) — see `reminders-and-delivery.md` §A.
-* Production definitions exist and are registered by `skills/manifest.ts`: `CREATE_REMINDER`, `remember` (`MEMORY_WRITE`).
+* The legacy closure path is READ-only; the temporary allow-list was removed in Build #8 — see `consolidation-build8.md`.
+* Production definitions exist and are registered by `skills/manifest.ts`: `CREATE_REMINDER`, `CREATE_TASK`, `MEMORY_CREATE` (remember), and the SENSITIVE `MEMORY_UPDATE`, `MEMORY_CONFIRM`, `MEMORY_DELETE`.
 * SYSTEM is policy-stricter than voice and can never approve. A permission row's category must match the definition's category.
 * Success-audit failure → `EXECUTED` + `auditUnconfirmed`; start-audit failure → nothing runs.
 
 ## Known limitations
-* Only reminders and `remember` are ActionDefinitions; `CREATE_TASK` and memory update/remove/confirm remain on the temporary legacy allow-list. Gmail should be born as an `ActionDefinition`.
+* Every production write is an ActionDefinition (tasks, reminders, memory create/update/confirm/delete). Gmail should be born as an `ActionDefinition`.
 * Nothing proposes approvals from natural language yet (Core has no such intent); tests use `proposeAction` directly.
 * Legacy (pre-Build-#6) approvals were expired by the migration; a legacy `APPROVED` row fails the integrity check and cannot execute.
 * Approval TTL is per definition, not user-configurable; no worker runs the optional expiry sweep; no execution timeout.

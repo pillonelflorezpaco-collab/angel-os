@@ -1,8 +1,10 @@
 import { listTasks } from "../../skills/system/tasks.js";
 import { search as searchMemory } from "../../skills/system/memory.js";
-import { MarkdownKnowledgeProvider } from "../../knowledge/markdown/index.js";
+import { searchKnowledge } from "../../skills/system/knowledge.js";
+import { assertExplicitIdentity, runWithIdentity } from "../../identity/index.js";
 import type { ContextRequest, ContextEngine } from "../types/index.js";
 import type { ContextPackage } from "../../core/types/index.js";
+import type { KnowledgeSearchResult } from "../../knowledge/types/index.js";
 import type { MemoryRecord } from "../../memory/types/index.js";
 
 /**
@@ -17,18 +19,22 @@ import type { MemoryRecord } from "../../memory/types/index.js";
  * and named in `withheld` — its data is never fetched, so it cannot leak.
  * Audit entries record the resource and action only, never memory content.
  *
- * Knowledge documents are the principal's own hand-curated files, not
- * principal-scoped records, so they are read directly (path-safe, see
- * knowledge/markdown).
+ * Knowledge is read through the knowledge SKILL (READ permission, audited),
+ * never from the Markdown provider directly. The caller's IdentityContext is
+ * REQUIRED (no identity → no context, fail closed) and the principal is
+ * derived from it; this module never touches the database or a provider.
  */
 export class DeterministicContextEngine implements ContextEngine {
-  private readonly knowledge = new MarkdownKnowledgeProvider();
-
   async buildContext(request: ContextRequest): Promise<ContextPackage> {
-    const [tasksResult, memoryResult, knowledgeHits] = await Promise.all([
-      listTasks({ principalId: request.principalId, agentKey: request.agentKey }),
-      searchMemory({ principalId: request.principalId, agentKey: request.agentKey, query: { query: request.query, limit: 5 } }),
-      this.knowledge.search(request.query, 3),
+    const identity = assertExplicitIdentity(request?.identity); // throws IdentityRequiredError
+    return runWithIdentity(identity, () => this.build(identity.principalId, request));
+  }
+
+  private async build(principalId: string, request: ContextRequest): Promise<ContextPackage> {
+    const [tasksResult, memoryResult, knowledgeResult] = await Promise.all([
+      listTasks({ principalId, agentKey: request.agentKey }),
+      searchMemory({ principalId, agentKey: request.agentKey, query: { query: request.query, limit: 5 } }),
+      searchKnowledge(request.identity, { agentKey: request.agentKey, query: request.query, limit: 3 }),
     ]);
 
     const withheld: string[] = [];
@@ -61,10 +67,17 @@ export class DeterministicContextEngine implements ContextEngine {
       withheld.push("memories");
     }
 
+    let relevantKnowledge: ContextPackage["relevantKnowledge"] = [];
+    if (knowledgeResult.status === "EXECUTED") {
+      relevantKnowledge = (knowledgeResult.data as KnowledgeSearchResult[]).map((k) => ({ slug: k.slug, title: k.title, excerpt: k.excerpt }));
+    } else {
+      withheld.push("knowledge");
+    }
+
     return {
       currentTasks,
       relevantMemories,
-      relevantKnowledge: knowledgeHits.map((k) => ({ slug: k.slug, title: k.title, excerpt: k.excerpt })),
+      relevantKnowledge,
       withheld,
       notes: [],
     };

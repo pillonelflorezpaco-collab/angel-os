@@ -9,7 +9,7 @@ import { ReminderEngine } from "../reminders/index.js";
 import { DeliveryDispatcher } from "../application/delivery.js";
 import { TelegramBotApi, TelegramDeliveryPort } from "../interfaces/telegram/index.js";
 import { getExternalIdentityService } from "../identity/index.js";
-import { registerSkillActions } from "../skills/manifest.js";
+import { registerSkillActions, verifyProductionActions } from "../skills/manifest.js";
 import { disconnectDb } from "../db/client/index.js";
 
 const principalId = process.env.ANGEL_OS_SYSTEM_PRINCIPAL_ID;
@@ -33,4 +33,10 @@ const engine = new ReminderEngine({
 });
 const intervalMs = Number(process.env.ANGEL_OS_WORKER_INTERVAL_MS ?? 15_000);
 console.log("Reminder worker started.");
-engine.run(controller.signal, intervalMs).finally(() => disconnectDb());
+verifyProductionActions().then(
+  () => engine.run(controller.signal, intervalMs).finally(() => disconnectDb()),
+  (err) => {
+    console.error(err instanceof Error ? err.message : "Action registry check failed.");
+    process.exit(1);
+  }
+);

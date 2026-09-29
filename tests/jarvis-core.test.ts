@@ -54,7 +54,7 @@ describe("Jarvis Core — deterministic request flow", () => {
         state: "ALLOWED",
       });
     }
-    for (const action of ["MEMORY_READ", "MEMORY_WRITE"] as const) {
+    for (const action of ["MEMORY_READ", "MEMORY_CREATE"] as const) {
       await setPermission({
         principalId,
         agentKey: JARVIS_AGENT_KEY,

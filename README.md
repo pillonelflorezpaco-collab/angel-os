@@ -49,6 +49,7 @@ cp .env.example .env
 
 npm run db:migrate      # applies db/schema.prisma migrations
 npm run db:seed         # creates the Principal, jarvis-core agent, skills, permissions
+# Startup verification (API, Telegram, worker) needs ANGEL_OS_SYSTEM_PRINCIPAL_ID = that principal's id
 
 # Required for the credential store (default: encrypted). Generate once:
 #   openssl rand -hex 32

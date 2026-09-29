@@ -100,6 +100,52 @@ describe("execution-path architecture boundaries", () => {
     expect(outside(filesMentioning(/\bgetDb\b|@prisma\/client/), /^(db|identity|gateway|skills|memory|connectors|activity|reminders|context)\//).filter((f) => !/^skills\/.*\.ts$/.test(f))).toEqual([]);
   });
 
+  describe("BUILD #8: knowledge, context and mutation boundaries", () => {
+    it("Context has no database access and never imports the Knowledge provider (it reads through skills)", () => {
+      const files = [...code.entries()].filter(([f]) => f.startsWith("context/"));
+      expect(files.length).toBeGreaterThan(0);
+      const offenders = files.flatMap(([f, src]) =>
+        runtimeImports(src).filter((s) => /(^|\/)(db|memory|knowledge\/markdown|gateway|connectors|interfaces|api)(\/|$)|@prisma\/client/.test(s)).map((s) => `${f} imports ${s}`)
+      );
+      expect(offenders).toEqual([]);
+      expect(files.some(([, src]) => /\bgetDb\b/.test(src))).toBe(false);
+    });
+
+    it("the Markdown knowledge provider is imported by exactly one module: the knowledge skill", () => {
+      expect(importersOf(/^knowledge\/markdown\/index(\.js)?$/)).toEqual(["skills/system/knowledge.ts"]);
+    });
+
+    it("the knowledge provider is not an authorization boundary: it imports no gateway, identity, skills, database or connectors", () => {
+      const offenders = [...code.entries()].filter(([f]) => f.startsWith("knowledge/")).flatMap(([f, src]) =>
+        runtimeImports(src).filter((s) => /(^|\/)(gateway|identity|skills|db|connectors|api)(\/|$)|@prisma\/client/.test(s)).map((s) => `${f} imports ${s}`));
+      expect(offenders).toEqual([]);
+    });
+
+    it("the gateway contains no write allow-list", () => {
+      expect(/ALLOWLIST|isLegacyWriteAllowed/i.test(code.get("gateway/index.ts")!)).toBe(false);
+    });
+
+    it("mutation skills take an explicit IdentityContext as their first parameter (not a principalId)", async () => {
+      const tasks = await import("../skills/system/tasks.js");
+      const memory = await import("../skills/system/memory.js");
+      for (const fn of [tasks.createTask, tasks.createReminder, tasks.createRelativeReminder, memory.remember, memory.updateMemory, memory.confirmMemory, memory.deleteMemory]) {
+        expect(fn.length, fn.name).toBe(2);
+        expect(fn.toString().replace(/\s+/g, " ")).toMatch(/^(async )?(function \w*)?\s*\(?\s*identity\b/);
+      }
+    });
+
+    it("skills that mutate state do so only inside ActionDefinition executors (no closure writes): no gatewayExecute closure calls a Prisma create/update/delete", () => {
+      const offenders: string[] = [];
+      for (const [f, src] of code.entries()) {
+        if (!f.startsWith("skills/") || f === "skills/integrations/calendar.ts") continue;
+        for (const m of src.matchAll(/gatewayExecute\(([\s\S]*?)\n  \);?\n/g)) {
+          if (/\.(create|update|updateMany|delete|deleteMany|upsert)\(|add(Memory)|updateMemory|deleteMemory|confirmMemory/.test(m[1])) offenders.push(f);
+        }
+      }
+      expect(offenders).toEqual([]);
+    });
+  });
+
   describe("the checkers themselves work", () => {
     it("importersOf finds a real importer and would flag a violation", () => {
       expect(importersOf(/^gateway\/actions\/registry(\.js)?$/)).toContain("skills/manifest.ts");

@@ -41,7 +41,7 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
     expect(result.status).toBe("DENIED");
   });
 
-  it("allows memory.search once MEMORY_READ is granted, and denies memory.remember until MEMORY_WRITE is also granted", async () => {
+  it("allows memory.search once MEMORY_READ is granted, and denies memory.remember until MEMORY_CREATE is also granted", async () => {
     await setPermission({
       principalId,
       agentKey,
@@ -59,7 +59,7 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
     expect(rememberResult.status).toBe("DENIED");
 
     // remember is an ActionDefinition checked for the jarvis-core agent.
-    await grant(principalId, JARVIS_AGENT_KEY, memorySkill.SKILL_KEY, memorySkill.RESOURCE, "MEMORY_WRITE", "WRITE");
+    await grant(principalId, JARVIS_AGENT_KEY, memorySkill.SKILL_KEY, memorySkill.RESOURCE, "MEMORY_CREATE", "WRITE");
 
     const rememberResult2 = await memorySkill.remember(identityFor(principalId), { type: "FACT", content: "now allowed", source: "test" });
     expect(rememberResult2.status).toBe("EXECUTED");

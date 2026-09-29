@@ -9,11 +9,20 @@
 import { checkPermission } from "./permissions/index.js";
 import { recordAuditEvent } from "./audit/index.js";
 import { safeAudit } from "./audit/safe.js";
+import { payloadHash } from "./actions/binding.js";
 import type { ActionRequest, Result } from "../core/types/index.js";
 import { toSafeError, logInternalError } from "../core/errors.js";
 import { currentIdentity } from "../identity/context.js";
 
 export type ActionExecutor = () => Promise<unknown>;
+
+function parametersFingerprint(r: ActionRequest): { payloadHash?: string } {
+  try {
+    return { payloadHash: payloadHash({ principalId: r.principalId, skillKey: r.skillKey, resource: r.resource, action: r.action, parameters: r.parameters }) };
+  } catch {
+    return {}; // parameters that cannot be canonicalized are simply not fingerprinted
+  }
+}
 
 export async function gatewayExecute(
   request: ActionRequest,
@@ -86,14 +95,13 @@ export async function gatewayExecute(
     };
   }
 
-  // state === "ALLOWED". The legacy closure path is a READ lane. Anything
-  // that changes state or acts on the world must be an ActionDefinition run
-  // through proposeAction (interface policy, approval, exact binding). The
-  // only exceptions are the explicit, temporary entries in
-  // LEGACY_WRITE_ALLOWLIST. Unknown/missing categories fail closed.
+  // state === "ALLOWED". gatewayExecute is a READ compatibility lane and
+  // NOTHING ELSE. Anything that changes state or acts on the world is an
+  // ActionDefinition run through proposeAction (explicit identity, interface
+  // policy, approval, exact binding). WRITE, EXECUTE and unknown categories
+  // are refused here — there is no allow-list.
   const category = check.category;
-  const legacyOk = category === "READ" || (category === "WRITE" && isLegacyWriteAllowed(request));
-  if (!legacyOk) {
+  if (category !== "READ") {
     await recordAuditEvent({
       principalId: request.principalId,
       agentKey: request.agentKey,
@@ -110,6 +118,9 @@ export async function gatewayExecute(
     };
   }
 
+  // The request's parameters are represented in audit as a canonical hash
+  // only (a read query can be user content, so the raw values are not stored).
+  const auditParams = parametersFingerprint(request);
   let data: unknown;
   try {
     data = await execute();
@@ -128,7 +139,7 @@ export async function gatewayExecute(
       action: request.action,
       result: "FAILURE",
       source,
-      metadata: safe.audit,
+      metadata: { ...safe.audit, ...auditParams },
     });
     return { status: "FAILED", message: safe.publicMessage };
   }
@@ -144,28 +155,9 @@ export async function gatewayExecute(
     action: request.action,
     result: "SUCCESS",
     source,
+    metadata: auditParams,
   });
   return { status: "EXECUTED", message: "Action executed.", data, ...(audited ? {} : { auditUnconfirmed: true }) };
-}
-
-/**
- * TEMPORARY compatibility allow-list (BUILD #7). Exact
- * skill|resource|action triples that may still run as WRITE closures via
- * gatewayExecute because they have not been migrated to ActionDefinitions.
- * It is a frozen literal, matched exactly, and only ever applies to
- * category WRITE — EXECUTE never runs here. CREATE_REMINDER and
- * memory `remember` are NOT on it (both are ActionDefinitions now).
- * Remove entries as they migrate; adding one requires editing this file
- * and its test (tests/execution-guardrails.test.ts pins the exact list).
- */
-export const LEGACY_WRITE_ALLOWLIST: readonly string[] = Object.freeze([
-  "system.tasks|angel:tasks|CREATE_TASK",
-  // update / remove / confirm memory share this action; no interface calls them today.
-  "system.memory|angel:memory|MEMORY_WRITE",
-]);
-
-function isLegacyWriteAllowed(r: Pick<ActionRequest, "skillKey" | "resource" | "action">): boolean {
-  return LEGACY_WRITE_ALLOWLIST.includes(`${r.skillKey}|${r.resource}|${r.action}`);
 }
 
 export { checkPermission, setPermission } from "./permissions/index.js";
@@ -175,6 +167,7 @@ export {
   getApproval,
   decideApproval,
   APPROVAL_MESSAGES,
+  IDENTITY_REQUIRED_MESSAGE,
   type ApprovalOutcome,
   type ApprovalCode,
   type ApprovalView,

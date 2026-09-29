@@ -47,6 +47,12 @@ async function main() {
     create: { key: "system.activity", name: "System Activity", description: "Read the user-facing activity stream (life history)." },
   });
 
+  const knowledgeSkill = await db.skill.upsert({
+    where: { key: "system.knowledge" },
+    update: {},
+    create: { key: "system.knowledge", name: "System Knowledge", description: "Read the curated Markdown knowledge base (READ only, gateway-mediated)." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -88,7 +94,14 @@ async function main() {
     // ("remember that...", "what do i know about...") to keep working now
     // that it's routed through the gateway instead of bypassing it.
     { resource: "angel:memory", action: "MEMORY_READ", category: "READ", state: "ALLOWED", skillId: memorySkill.id },
-    { resource: "angel:memory", action: "MEMORY_WRITE", category: "WRITE", state: "ALLOWED", skillId: memorySkill.id },
+    // Memory authority is split (BUILD #8): create is LOW risk; update, confirm
+    // and delete are SENSITIVE and always need approval (policy enforces it
+    // whatever this row says; APPROVAL_REQUIRED documents the intent).
+    { resource: "angel:memory", action: "MEMORY_CREATE", category: "WRITE", state: "ALLOWED", skillId: memorySkill.id },
+    { resource: "angel:memory", action: "MEMORY_UPDATE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
+    { resource: "angel:memory", action: "MEMORY_CONFIRM", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
+    { resource: "angel:memory", action: "MEMORY_DELETE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
+    { resource: "angel:knowledge", action: "KNOWLEDGE_READ", category: "READ", state: "ALLOWED", skillId: knowledgeSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",
@@ -150,7 +163,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${tasksSkill.key}, ${memorySkill.key}, ${decisionsSkill.key}, ${activitySkill.key}, ${calendarSkill.key}, ${gmailSkill.key}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${tasksSkill.key}, ${memorySkill.key}, ${decisionsSkill.key}, ${activitySkill.key}, ${knowledgeSkill.key}, ${calendarSkill.key}, ${gmailSkill.key}`
   );
 }
 

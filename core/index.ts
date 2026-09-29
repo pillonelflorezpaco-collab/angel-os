@@ -134,11 +134,8 @@ export class JarvisCore {
     const principalId = request.principalId;
     switch (action) {
       case "CREATE_TASK":
-        return createTask({
-          principalId,
-          agentKey: JARVIS_AGENT_KEY,
-          title: String(parameters.title ?? "Untitled task"),
-        });
+        if (!request.identity) return NO_IDENTITY;
+        return createTask(request.identity, { title: String(parameters.title ?? "Untitled task") });
       case "READ":
         return listTasks({ principalId, agentKey: JARVIS_AGENT_KEY });
       case "CREATE_REMINDER": {

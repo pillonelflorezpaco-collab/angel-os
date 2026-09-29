@@ -42,6 +42,13 @@ export interface ActionRequest {
   skillKey: string;
   resource: string;
   action: string;
+  /**
+   * The exact parameters of THIS request. For READ-lane requests they are
+   * represented in audit as a canonical SHA-256 (`payloadHash`), never raw.
+   * For actions (ActionDefinitions) the canonical, schema-validated
+   * parameters are the ones stored, hashed and executed — this legacy
+   * request type carries no mutation.
+   */
   parameters: Record<string, unknown>;
   principalId: string;
 }

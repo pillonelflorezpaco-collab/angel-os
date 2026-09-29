@@ -34,7 +34,7 @@ describe("activity vs audit are separate systems", () => {
   });
 
   it("a permitted action writes BOTH an audit row and an activity row", async () => {
-    await grant(a, agentKey, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_WRITE", "WRITE");
+    await grant(a, agentKey, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_CREATE", "WRITE");
     const identity = idFor(a, "TELEGRAM");
     const secret = "activity-sep-secret-content-8841";
     const result = await runWithIdentity(identity, () =>

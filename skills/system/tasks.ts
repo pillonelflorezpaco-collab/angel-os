@@ -14,37 +14,53 @@ export const SKILL_KEY = "system.tasks";
 export const RESOURCE = "angel:tasks";
 
 export interface CreateTaskInput {
-  principalId: string;
-  agentKey: string;
   title: string;
   description?: string;
   dueAt?: Date;
 }
 
-export async function createTask(input: CreateTaskInput): Promise<Result> {
-  const result = await gatewayExecute(
-    {
-      principalId: input.principalId,
-      agentKey: input.agentKey,
-      skillKey: SKILL_KEY,
-      resource: RESOURCE,
-      action: "CREATE_TASK",
-      parameters: { title: input.title },
+const taskParams = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
+    dueAt: z.string().datetime().optional(),
+  })
+  .strict();
+type TaskParams = z.infer<typeof taskParams>;
+
+/**
+ * CREATE_TASK as a registered ActionDefinition (BUILD #8): explicit identity,
+ * strict schema, interface policy. LOW risk: direct on GuideHub/API/Telegram,
+ * approval on voice and SYSTEM. No Activity row: there is no
+ * task-created activity type (only TASK_COMPLETED), and nothing completes tasks yet.
+ */
+export const createTaskDefinition: ActionDefinition<TaskParams> = {
+  skillKey: SKILL_KEY,
+  action: "CREATE_TASK",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "LOW",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: taskParams,
+  describe: (p) => `Add task: ${p.title}`,
+  async execute(ctx, p) {
+    return getDb().task.create({
+      data: { principalId: ctx.principalId, title: p.title, description: p.description, dueAt: p.dueAt ? new Date(p.dueAt) : undefined },
+    });
+  },
+  successMessage: (task, p) => `Task added: ${p.title}`,
+};
+
+export function createTask(identity: IdentityContext, input: CreateTaskInput): Promise<Result> {
+  return proposeAction(identity, {
+    skillKey: SKILL_KEY,
+    action: "CREATE_TASK",
+    parameters: {
+      title: input.title,
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.dueAt ? { dueAt: input.dueAt.toISOString() } : {}),
     },
-    async () => {
-      const db = getDb();
-      return db.task.create({
-        data: {
-          principalId: input.principalId,
-          title: input.title,
-          description: input.description,
-          dueAt: input.dueAt,
-        },
-      });
-    },
-    "skill.system.tasks"
-  );
-  return result.status === "EXECUTED" ? { ...result, message: `Task added: ${input.title}` } : result;
+  });
 }
 
 export interface ListTasksInput {

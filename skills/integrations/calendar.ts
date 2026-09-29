@@ -82,6 +82,14 @@ async function markConnectionError(connectionId: string, principalId: string, re
 }
 
 /**
+ * NOTE (accepted debt, BUILD #8): token refresh below is an internal
+ * credential-MAINTENANCE write (external POST + credential-store rewrite)
+ * that happens during a calendar READ. It touches only this principal's own
+ * connection secret and is not user-visible state, but it is a mutation
+ * inside the READ lane and it has no lock (two concurrent reads can both
+ * refresh). Moving it out needs a connection-maintenance action + lock and
+ * is a follow-up, not part of this build.
+ *
  * Resolves a usable access token for this principal's Google connection,
  * refreshing it first if it's expired (or about to be). `oauthClientOverride`
  * exists purely for testing — production code never passes it, so a real

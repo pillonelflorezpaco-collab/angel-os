@@ -236,7 +236,8 @@ describe("two-principal isolation", () => {
 
   describe("tasks", () => {
     it("A cannot see B's tasks through listTasks", async () => {
-      await createTask({ principalId: principalB, agentKey, title: "B's private task" });
+      await grant(principalB, JARVIS_AGENT_KEY, TASKS_SKILL, TASKS_RESOURCE, "CREATE_TASK", "WRITE");
+      expect((await createTask(identityFor(principalB), { title: "B's private task" })).status).toBe("EXECUTED");
       const aResult = await listTasks({ principalId: principalA, agentKey });
       expect(aResult.status).toBe("EXECUTED");
       const aTasks = aResult.data as { title: string }[];

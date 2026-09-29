@@ -14,7 +14,7 @@ import {
 } from "../gateway/index.js";
 import { getConnectionService, getConnectorRegistry, ConnectionNotFoundError, OAuthStateInvalidError, OAuthStateExpiredError } from "../connectors/index.js";
 import { GoogleOAuthConfigError, GoogleOAuthApiError } from "../connectors/google/oauthClient.js";
-import { registerSkillActions } from "../skills/manifest.js";
+import { registerSkillActions, verifyProductionActions } from "../skills/manifest.js";
 import { registerGoogleConnector } from "../connectors/google/index.js";
 import { startGoogleAuthorization, completeGoogleAuthorization } from "../connectors/google/authorization.js";
 import { BearerTokenAuthenticator, getPrincipalProfile, type Authenticator } from "../identity/index.js";
@@ -134,9 +134,7 @@ export function createApp(options: AppOptions = {}) {
       const parsed = createTaskSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
       res.json(
-        await createTask({
-          principalId: identityOf(req).principalId,
-          agentKey: JARVIS_AGENT_KEY,
+        await createTask(identityOf(req), {
           title: parsed.data.title,
           description: parsed.data.description,
           dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : undefined,
@@ -308,8 +306,18 @@ export const app = createApp();
 const port = Number(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {
-  app.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`Angel OS API listening on http://localhost:${port}`);
-  });
+  // Startup invariant: every production ActionDefinition has its skill,
+  // agent and permission registered. If not, do not serve.
+  verifyProductionActions()
+    .then(() => {
+      app.listen(port, () => {
+        // eslint-disable-next-line no-console
+        console.log(`Angel OS API listening on http://localhost:${port}`);
+      });
+    })
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(err instanceof Error ? err.message : "Action registry check failed.");
+      process.exit(1);
+    });
 }

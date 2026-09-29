@@ -51,7 +51,7 @@ Data/Ext:   Prisma/Postgres · MemoryProvider · CredentialStore · ConnectorReg
 
 Permissions seeded for the single principal (`db/seed/seed.ts`):
 `angel:tasks` READ/CREATE_TASK/CREATE_REMINDER, `angel:memory`
-MEMORY_READ/MEMORY_WRITE, `angel:decisions` DECISION_READ,
+MEMORY_READ/MEMORY_WRITE (superseded in Build #8 by MEMORY_CREATE/UPDATE/CONFIRM/DELETE), `angel:decisions` DECISION_READ,
 `angel:calendar` READ — all ALLOWED. Illustrative `angel:gmail` rows
 (READ ALLOWED, SEND_EMAIL APPROVAL_REQUIRED, DELETE_ALL DENIED) on an
 inactive placeholder skill. **No currently implemented skill ever reaches
@@ -132,3 +132,11 @@ exists, audit-after-effect no longer misreports, identity administration is audi
 reminders are delivered (F8). Still open: `CREATE_TASK` and memory mutations on the
 legacy allow-list, F9 (audit/approvals read routes), F10, F11, the GuideHub API
 envelope inconsistencies. Details: `docs/architecture/reminders-and-delivery.md`.
+
+## Build #8 update
+
+Resolved from the architecture map audit: voice could create tasks directly and destructive memory
+operations shared `MEMORY_WRITE` (A1, A2); the identity guard was optional for mutations (A3);
+knowledge/context were ungated (A4); `ActionRequest.parameters` was dead. Still open: Google refresh in
+READ, audit FK cascade, direct audit/approval read routes, global knowledge content. See
+`docs/architecture/consolidation-build8.md`.

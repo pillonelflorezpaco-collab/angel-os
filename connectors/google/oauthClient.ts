@@ -4,6 +4,9 @@
 // for what is, at bottom, three HTTP calls. `fetch` is injectable so tests
 // never hit the real network (see tests/google-calendar.test.ts).
 
+/** Upper bound for any single OAuth/userinfo call. */
+const OAUTH_TIMEOUT_MS = 10_000;
+
 export const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 export const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -75,6 +78,7 @@ export class GoogleOAuthClient {
 
   async exchangeCode(code: string, redirectUri: string): Promise<TokenResponse> {
     const res = await this.fetchFn(GOOGLE_TOKEN_ENDPOINT, {
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -90,6 +94,7 @@ export class GoogleOAuthClient {
 
   async refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
     const res = await this.fetchFn(GOOGLE_TOKEN_ENDPOINT, {
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -104,6 +109,7 @@ export class GoogleOAuthClient {
 
   async fetchUserInfo(accessToken: string): Promise<GoogleUserInfo> {
     const res = await this.fetchFn(GOOGLE_USERINFO_ENDPOINT, {
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) {

@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { LocalMemoryProvider } from "../memory/local/index.js";
@@ -93,7 +94,7 @@ describe("fact vs inference", () => {
   });
 
   it("context generation preserves type, status, and confirmed flag", async () => {
-    const ctx = await new DeterministicContextEngine().buildContext({ principalId, agentKey: JARVIS_AGENT_KEY, query: "fitest" });
+    const ctx = await new DeterministicContextEngine().buildContext({ identity: identityFor(principalId), agentKey: JARVIS_AGENT_KEY, query: "fitest" });
     const fact = ctx.relevantMemories.find((m) => m.id === factId)!;
     const inference = ctx.relevantMemories.find((m) => m.id === inferenceId)!;
     expect(fact).toMatchObject({ type: "FACT", status: "ACTIVE", confirmed: true });

@@ -149,6 +149,15 @@ administration audit; execution-path import boundaries. Additive migration
 `reminder_delivery_system_identity`. See `docs/architecture/reminders-and-delivery.md`.
 Next candidates: migrate `CREATE_TASK`/memory mutations, GuideHub API cleanups, Gmail.
 
+## Build #8 — Core security consolidation
+
+Done: legacy write allow-list deleted (`gatewayExecute` = READ lane only); `CREATE_TASK` and
+split memory authority (`MEMORY_CREATE/UPDATE/CONFIRM/DELETE`) as ActionDefinitions; explicit
+mandatory IdentityContext for mutations (ALS is audit-only); knowledge skill + context require
+identity and go through the gateway; registry/permission startup invariant; canonical parameter
+fingerprint in READ audit; Google call timeouts. One data-only migration
+(`split_memory_write_permission`). See `docs/architecture/consolidation-build8.md`.
+
 ## Principal-architect audit (supersedes the Build #4 recommendation below)
 
 A verified audit (`docs/architecture/current-state.md`) found gaps the

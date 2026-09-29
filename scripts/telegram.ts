@@ -5,7 +5,7 @@
 // against the real Telegram API in this repo's tests — see docs.
 import { TelegramAdapter, TelegramBotApi, TelegramPoller } from "../interfaces/telegram/index.js";
 import { DbCursorStore } from "../db/cursors.js";
-import { registerSkillActions } from "../skills/manifest.js";
+import { registerSkillActions, verifyProductionActions } from "../skills/manifest.js";
 import { disconnectDb } from "../db/client/index.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -21,4 +21,10 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => controll
 
 const poller = new TelegramPoller(new TelegramBotApi(token), new TelegramAdapter(), new DbCursorStore("TELEGRAM", "updates"));
 console.log("Telegram interface started (long polling). Only linked private chats are answered.");
-poller.run(controller.signal).finally(() => disconnectDb());
+verifyProductionActions().then(
+  () => poller.run(controller.signal).finally(() => disconnectDb()),
+  (err) => {
+    console.error(err instanceof Error ? err.message : "Action registry check failed.");
+    process.exit(1);
+  }
+);

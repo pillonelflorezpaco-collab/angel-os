@@ -137,7 +137,7 @@ describe("Telegram adapter", () => {
     });
 
     it("with the permission the same message succeeds — and is tagged TELEGRAM in audit and activity", async () => {
-      await grant(a, JARVIS_AGENT_KEY, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_WRITE", "WRITE");
+      await grant(a, JARVIS_AGENT_KEY, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_CREATE", "WRITE");
       const reply = await adapter.handleUpdate(msg(tgA, "Remember that I prefer window seats"));
       expect(reply?.text).toBe("Remembered. [fact] I prefer window seats");
       const activity = await getDb().activity.findFirstOrThrow({ where: { principalId: a, type: "MEMORY_CREATED" } });

@@ -17,7 +17,7 @@ async function grantAll(principalId: string) {
   await grant(principalId, JARVIS_AGENT_KEY, TASKS_SKILL, TASKS_RESOURCE, "READ", "READ");
   await grant(principalId, JARVIS_AGENT_KEY, TASKS_SKILL, TASKS_RESOURCE, "CREATE_TASK", "WRITE");
   await grant(principalId, JARVIS_AGENT_KEY, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_READ", "READ");
-  await grant(principalId, JARVIS_AGENT_KEY, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_WRITE", "WRITE");
+  await grant(principalId, JARVIS_AGENT_KEY, MEMORY_SKILL, MEMORY_RESOURCE, "MEMORY_CREATE", "WRITE");
   await grant(principalId, JARVIS_AGENT_KEY, ACTIVITY_SKILL, ACTIVITY_RESOURCE, "ACTIVITY_READ", "READ");
 }
 

@@ -1,5 +1,6 @@
 import { getMemoryProvider } from "../../memory/index.js";
-import type { AddMemoryInput, MemoryRecord, SearchMemoryInput, UpdateMemoryInput } from "../../memory/types/index.js";
+import { MemoryNotFoundError, type AddMemoryInput, type MemoryRecord, type SearchMemoryInput } from "../../memory/types/index.js";
+import { PublicError } from "../../core/errors.js";
 import { gatewayExecute, proposeAction } from "../../gateway/index.js";
 import type { ActionDefinition } from "../../gateway/index.js";
 import { MemoryType } from "@prisma/client";
@@ -43,7 +44,7 @@ type RememberParams = z.infer<typeof rememberParams>;
  */
 export const rememberDefinition: ActionDefinition<RememberParams> = {
   skillKey: SKILL_KEY,
-  action: "MEMORY_WRITE",
+  action: "MEMORY_CREATE",
   resource: RESOURCE,
   category: "WRITE",
   risk: "LOW",
@@ -69,7 +70,7 @@ export const rememberDefinition: ActionDefinition<RememberParams> = {
 export function remember(identity: IdentityContext, memory: Omit<AddMemoryInput, "principalId">): Promise<Result> {
   return proposeAction(identity, {
     skillKey: SKILL_KEY,
-    action: "MEMORY_WRITE",
+    action: "MEMORY_CREATE",
     parameters: { type: memory.type, content: memory.content, source: memory.source },
   });
 }
@@ -95,66 +96,76 @@ export async function search(input: SearchInput): Promise<Result> {
   );
 }
 
-export interface UpdateInput {
-  principalId: string;
-  agentKey: string;
-  memoryId: string;
-  update: UpdateMemoryInput;
+// ── Sensitive memory mutations (BUILD #8) ─────────────────────────────────
+// update / confirm / delete are separate actions with separate permissions,
+// each SENSITIVE (approval on every interface; voice and SYSTEM can never
+// approve them). Ownership is enforced INSIDE execution by the principal-scoped
+// provider methods — a memory id from another principal is simply "not found".
+// No public route or Core intent exposes them yet.
+
+const memoryId = z.string().uuid();
+
+async function ownedOrNotFound<T>(op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (err) {
+    if (err instanceof MemoryNotFoundError) throw new PublicError("That memory wasn't found.");
+    throw err;
+  }
 }
 
-export async function update(input: UpdateInput): Promise<Result> {
-  return gatewayExecute(
-    {
-      principalId: input.principalId,
-      agentKey: input.agentKey,
-      skillKey: SKILL_KEY,
-      resource: RESOURCE,
-      action: "MEMORY_WRITE",
-      parameters: { memoryId: input.memoryId },
-    },
-    () => getMemoryProvider().updateMemory(input.principalId, input.memoryId, input.update),
-    "skill.system.memory"
-  );
-}
+const updateParams = z
+  .object({ memoryId, content: z.string().trim().min(1).max(2000).optional(), confidence: z.number().min(0).max(1).optional() })
+  .strict()
+  .refine((p) => p.content !== undefined || p.confidence !== undefined, { message: "nothing to update" });
+type UpdateParams = z.infer<typeof updateParams>;
 
-export interface DeleteInput {
-  principalId: string;
-  agentKey: string;
-  memoryId: string;
-}
+export const memoryUpdateDefinition: ActionDefinition<UpdateParams> = {
+  skillKey: SKILL_KEY,
+  action: "MEMORY_UPDATE",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "SENSITIVE",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: updateParams,
+  describe: (p) => `Update memory ${p.memoryId}${p.content !== undefined ? `: "${p.content}"` : ""}`,
+  execute: (ctx, p) =>
+    ownedOrNotFound(() => getMemoryProvider().updateMemory(ctx.principalId, p.memoryId, { content: p.content, confidence: p.confidence })),
+  successMessage: () => "Memory updated.",
+};
 
-export async function remove(input: DeleteInput): Promise<Result> {
-  return gatewayExecute(
-    {
-      principalId: input.principalId,
-      agentKey: input.agentKey,
-      skillKey: SKILL_KEY,
-      resource: RESOURCE,
-      action: "MEMORY_WRITE",
-      parameters: { memoryId: input.memoryId },
-    },
-    () => getMemoryProvider().deleteMemory(input.principalId, input.memoryId),
-    "skill.system.memory"
-  );
-}
+const idOnly = z.object({ memoryId }).strict();
+type IdOnly = z.infer<typeof idOnly>;
 
-export interface ConfirmInput {
-  principalId: string;
-  agentKey: string;
-  memoryId: string;
-}
+export const memoryConfirmDefinition: ActionDefinition<IdOnly> = {
+  skillKey: SKILL_KEY,
+  action: "MEMORY_CONFIRM",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "SENSITIVE",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: idOnly,
+  describe: (p) => `Confirm memory ${p.memoryId} as a standing fact`,
+  execute: (ctx, p) => ownedOrNotFound(() => getMemoryProvider().confirmMemory(ctx.principalId, p.memoryId)),
+  successMessage: () => "Memory confirmed.",
+};
 
-export async function confirm(input: ConfirmInput): Promise<Result> {
-  return gatewayExecute(
-    {
-      principalId: input.principalId,
-      agentKey: input.agentKey,
-      skillKey: SKILL_KEY,
-      resource: RESOURCE,
-      action: "MEMORY_WRITE",
-      parameters: { memoryId: input.memoryId },
-    },
-    () => getMemoryProvider().confirmMemory(input.principalId, input.memoryId),
-    "skill.system.memory"
-  );
-}
+export const memoryDeleteDefinition: ActionDefinition<IdOnly> = {
+  skillKey: SKILL_KEY,
+  action: "MEMORY_DELETE",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "SENSITIVE",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: idOnly,
+  describe: (p) => `Permanently delete memory ${p.memoryId}`,
+  execute: (ctx, p) => ownedOrNotFound(() => getMemoryProvider().deleteMemory(ctx.principalId, p.memoryId)),
+  successMessage: () => "Memory deleted.",
+};
+
+export const updateMemory = (identity: IdentityContext, input: { memoryId: string; content?: string; confidence?: number }) =>
+  proposeAction(identity, { skillKey: SKILL_KEY, action: "MEMORY_UPDATE", parameters: input });
+export const confirmMemory = (identity: IdentityContext, input: { memoryId: string }) =>
+  proposeAction(identity, { skillKey: SKILL_KEY, action: "MEMORY_CONFIRM", parameters: { memoryId: input.memoryId } });
+export const deleteMemory = (identity: IdentityContext, input: { memoryId: string }) =>
+  proposeAction(identity, { skillKey: SKILL_KEY, action: "MEMORY_DELETE", parameters: { memoryId: input.memoryId } });

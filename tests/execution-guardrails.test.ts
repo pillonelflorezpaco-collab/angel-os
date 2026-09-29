@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
-import { gatewayExecute, LEGACY_WRITE_ALLOWLIST, listAuditLog, proposeAction } from "../gateway/index.js";
+import { gatewayExecute, listAuditLog, proposeAction } from "../gateway/index.js";
 import { createPrincipal, deletePrincipal, grant } from "./helpers/fixtures.js";
 import { withAuditFailures, ACTIONS, FAKE_SKILL, calls, resetCalls, registerFakeActions, ensureExecRegistry, grantFake, identityFor, goodParams } from "./helpers/fakeActions.js";
 import { PRODUCTION_ACTIONS } from "../skills/manifest.js";
@@ -76,45 +76,47 @@ describe("gatewayExecute guardrail (legacy path is READ-only)", () => {
     expect(ran).toBe(false);
   });
 
-  describe("the temporary allow-list", () => {
-    it("is exactly the two documented entries — CREATE_REMINDER and remember are not on it", () => {
-      expect([...LEGACY_WRITE_ALLOWLIST]).toEqual([
-        "system.tasks|angel:tasks|CREATE_TASK",
-        "system.memory|angel:memory|MEMORY_WRITE",
-      ]);
-      expect(LEGACY_WRITE_ALLOWLIST.some((e) => e.includes("CREATE_REMINDER"))).toBe(false);
+  describe("there is no legacy write allow-list any more (BUILD #8)", () => {
+    it("the gateway exports no allow-list at all", async () => {
+      const gw = await import("../gateway/index.js");
+      expect("LEGACY_WRITE_ALLOWLIST" in gw).toBe(false);
     });
 
-    it("cannot be expanded at runtime", () => {
-      expect(Object.isFrozen(LEGACY_WRITE_ALLOWLIST)).toBe(true);
-      expect(() => (LEGACY_WRITE_ALLOWLIST as string[]).push("x|y|z")).toThrow();
+    it("the formerly allow-listed writes are refused through gatewayExecute (CREATE_TASK, MEMORY_WRITE)", async () => {
+      for (const [skill, res, action] of [["system.tasks", "angel:tasks", "CREATE_TASK"], ["system.memory", "angel:memory", "MEMORY_WRITE"]] as const) {
+        await grant(p, agentKey, skill, res, action, "WRITE", "ALLOWED");
+        let ran = false;
+        const r = await gatewayExecute({ principalId: p, agentKey, skillKey: skill, resource: res, action, parameters: {} }, async () => { ran = true; });
+        expect(r.status, action).toBe("DENIED");
+        expect(ran).toBe(false);
+      }
     });
 
-    it("matches exactly: a look-alike skill/resource/action does not inherit the entry", async () => {
-      await grant(p, agentKey, "system.tasks", "angel:tasks", "CREATE_TASK_2", "WRITE", "ALLOWED");
-      let ran = false;
-      const r = await gatewayExecute({ principalId: p, agentKey, skillKey: "system.tasks", resource: "angel:tasks", action: "CREATE_TASK_2", parameters: {} }, async () => { ran = true; });
-      expect(r.status).toBe("DENIED");
-      expect(ran).toBe(false);
-    });
-
-    it("an allow-listed WRITE (CREATE_TASK) still works — existing behaviour preserved", async () => {
+    it("CREATE_TASK works — through the ActionDefinition path, not the gateway lane", async () => {
       await grant(p, JARVIS_AGENT_KEY, "system.tasks", "angel:tasks", "CREATE_TASK", "WRITE");
-      const r = await createTask({ principalId: p, agentKey: JARVIS_AGENT_KEY, title: "still legacy" });
+      const r = await createTask(identityFor(p), { title: "via definition" });
       expect(r.status).toBe("EXECUTED");
+      const audit = (await listAuditLog(p, 50)).filter((e) => e.action === "CREATE_TASK").map((e) => e.eventType);
+      expect(audit).toContain("ACTION_EXECUTION_SUCCEEDED");
+      expect(audit).not.toContain("ACTION_EXECUTED"); // not the legacy event
     });
 
-    it("but the allow-list only ever covers WRITE: an EXECUTE row for an allow-listed action is refused", async () => {
+    it("a permission row whose category differs from the definition's is refused", async () => {
       await grant(p, JARVIS_AGENT_KEY, "system.tasks", "angel:tasks", "CREATE_TASK", "EXECUTE");
-      const r = await createTask({ principalId: p, agentKey: JARVIS_AGENT_KEY, title: "must be refused" });
-      expect(r.status).toBe("DENIED");
+      expect((await createTask(identityFor(p), { title: "must be refused" })).status).toBe("DENIED");
       await grant(p, JARVIS_AGENT_KEY, "system.tasks", "angel:tasks", "CREATE_TASK", "WRITE");
     });
   });
 
-  it("CREATE_REMINDER is a registered production ActionDefinition, not a legacy write", () => {
-    expect(PRODUCTION_ACTIONS).toContain("system.tasks|CREATE_REMINDER");
-    expect(PRODUCTION_ACTIONS).toContain("system.memory|MEMORY_WRITE");
+  it("every production write is a registered ActionDefinition", () => {
+    expect(PRODUCTION_ACTIONS.sort()).toEqual([
+      "system.memory|MEMORY_CONFIRM",
+      "system.memory|MEMORY_CREATE",
+      "system.memory|MEMORY_DELETE",
+      "system.memory|MEMORY_UPDATE",
+      "system.tasks|CREATE_REMINDER",
+      "system.tasks|CREATE_TASK",
+    ]);
   });
 
   describe("audit truthfulness", () => {

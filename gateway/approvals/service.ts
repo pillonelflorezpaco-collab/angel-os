@@ -10,7 +10,7 @@ import { executeApproval, runAction } from "../execution.js";
 import { transition } from "./state.js";
 import { expireIfStale, isStale } from "./expiry.js";
 import { now } from "../clock.js";
-import { runWithIdentity, type IdentityContext } from "../../identity/index.js";
+import { runWithIdentity, currentIdentity, assertExplicitIdentity, type IdentityContext } from "../../identity/index.js";
 import type { Result } from "../../core/types/index.js";
 
 // The approval service. Every function takes the authenticated
@@ -98,8 +98,41 @@ const fail = (code: Exclude<ApprovalCode, "OK">): ApprovalOutcome => ({ ok: fals
  * approval request. Nothing runs on the sensitive path until a human
  * approves the stored request.
  */
-export function proposeAction(identity: IdentityContext, proposal: ActionProposal): Promise<Result> {
-  return runWithIdentity(identity, () => proposeInner(identity, proposal));
+export const IDENTITY_REQUIRED_MESSAGE = "I can't do that without knowing who you are.";
+
+/**
+ * The explicit identity is the ONLY authority. It is validated at runtime,
+ * and if an ambient (ALS) identity exists for a DIFFERENT principal the call
+ * is refused: a caller that got its identities crossed changes nothing.
+ * Returns null (and records the conflict) when the call must fail closed.
+ */
+async function authoritativeIdentity(identity: unknown, action: string): Promise<IdentityContext | null> {
+  let explicit: IdentityContext;
+  try {
+    explicit = assertExplicitIdentity(identity);
+  } catch {
+    return null; // no principal to attribute an audit row to
+  }
+  const ambient = currentIdentity();
+  if (ambient && ambient.principalId !== explicit.principalId) {
+    await recordAuditEvent({
+      principalId: ambient.principalId,
+      eventType: "ACTION_DENIED",
+      resource: "identity",
+      action,
+      result: "DENIED",
+      source: "gateway.approvals",
+      metadata: { reason: "identity_conflict" },
+    });
+    return null;
+  }
+  return explicit;
+}
+
+export async function proposeAction(identity: IdentityContext, proposal: ActionProposal): Promise<Result> {
+  const authoritative = await authoritativeIdentity(identity, `PROPOSE:${proposal?.action}`);
+  if (!authoritative) return { status: "FAILED", message: IDENTITY_REQUIRED_MESSAGE };
+  return runWithIdentity(authoritative, () => proposeInner(authoritative, proposal));
 }
 
 async function proposeInner(identity: IdentityContext, proposal: ActionProposal): Promise<Result> {
@@ -252,12 +285,14 @@ export function getApproval(identity: IdentityContext, approvalId: string): Prom
 
 // ── APPROVE / DENY (and, on approve, EXECUTE) ────────────────────────────
 
-export function decideApproval(
+export async function decideApproval(
   identity: IdentityContext,
   approvalId: string,
   decision: "APPROVED" | "DENIED"
 ): Promise<ApprovalOutcome> {
-  return runWithIdentity(identity, () => decideInner(identity, approvalId, decision));
+  const authoritative = await authoritativeIdentity(identity, `DECIDE_APPROVAL:${decision}`);
+  if (!authoritative) return fail("FORBIDDEN");
+  return runWithIdentity(authoritative, () => decideInner(authoritative, approvalId, decision));
 }
 
 async function decideInner(identity: IdentityContext, approvalId: string, decision: "APPROVED" | "DENIED"): Promise<ApprovalOutcome> {

@@ -52,7 +52,9 @@ describe("error sanitization", () => {
     await run(dbError);
     const failed = (await listAuditLog(principalId, 50)).filter((l) => l.eventType === "ACTION_FAILED");
     const latest = failed[0];
-    expect(latest.metadata).toEqual({ errorType: "PrismaClientKnownRequestError", code: "P2002", public: false });
+    // Safe structured fields only; BUILD #8 adds the canonical parameter hash (never raw parameters).
+    expect(latest.metadata).toMatchObject({ errorType: "PrismaClientKnownRequestError", code: "P2002", public: false });
+    expect(Object.keys(latest.metadata as object).sort()).toEqual(["code", "errorType", "payloadHash", "public"]);
 
     const all = JSON.stringify(failed);
     for (const leak of ["hunter2", "postgresql://", "abc123secret", "angel@example.com", "Unique constraint"]) {
