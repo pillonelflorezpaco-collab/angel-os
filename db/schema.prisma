@@ -45,6 +45,7 @@ model Principal {
   quests             Quest[]
   results            Result[]
   aspirations        Aspiration[]
+  learningTopics     LearningTopic[]
   reviews            Review[]
 
   @@map("principals")
@@ -1065,4 +1066,91 @@ model MetricReading {
   @@index([metricId, observedAt])
   @@index([principalId])
   @@map("metric_readings")
+}
+
+// ── Learning Lab (BUILD #15) ──────────────────────────────────────────────
+// Topics, self-reported study sessions, and recall cards. What is "due" and how "stable" a card is are
+// DERIVED from the append-only review history (learning/schedule.ts) — nothing is stored as a score, streak
+// or XP, and nothing is ever declared "mastered" automatically.
+
+enum TopicStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED // owner's claim; terminal
+}
+
+model LearningTopic {
+  id          String      @id @default(uuid())
+  principalId String
+  principal   Principal   @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title       String
+  area        String?
+  intent      String? // why I'm learning this
+  goalId      String?
+  status      TopicStatus @default(ACTIVE)
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  sessions LearningSession[]
+  cards    LearningCard[]
+
+  @@index([principalId, status])
+  @@map("learning_topics")
+}
+
+// Append-only and self-reported.
+model LearningSession {
+  id              String        @id @default(uuid())
+  principalId     String
+  topicId         String
+  topic           LearningTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  minutes         Int
+  studiedAt       DateTime
+  note            String?
+  knowledgeItemId String?
+  createdAt       DateTime      @default(now())
+
+  @@index([topicId, studiedAt])
+  @@index([principalId, studiedAt])
+  @@map("learning_sessions")
+}
+
+enum CardStatus {
+  ACTIVE
+  RETIRED // terminal
+}
+
+model LearningCard {
+  id              String        @id @default(uuid())
+  principalId     String
+  topicId         String
+  topic           LearningTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  prompt          String
+  answer          String
+  knowledgeItemId String? // where it came from (reference only)
+  status          CardStatus    @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  reviews CardReview[]
+
+  @@index([topicId])
+  @@index([principalId, status])
+  @@map("learning_cards")
+}
+
+// Append-only. grade: 0 again, 1 hard, 2 good, 3 easy — the owner's own assessment.
+model CardReview {
+  id          String       @id @default(uuid())
+  principalId String
+  cardId      String
+  card        LearningCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  grade       Int
+  reviewedAt  DateTime
+  createdAt   DateTime     @default(now())
+
+  @@index([cardId, reviewedAt])
+  @@index([principalId])
+  @@map("card_reviews")
 }

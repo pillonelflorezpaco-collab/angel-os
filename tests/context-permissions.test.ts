@@ -48,7 +48,7 @@ describe("context engine — protected reads go through the permission gateway",
     const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.currentTasks).toEqual([]);
     expect(ctx.relevantMemories).toEqual([]);
-    expect(ctx.withheld.sort()).toEqual(["decisions", "future", "history", "knowledge", "life", "memories", "tasks"]);
+    expect(ctx.withheld.sort()).toEqual(["decisions", "future", "history", "knowledge", "learning", "life", "memories", "tasks"]);
     const serialized = JSON.stringify(ctx);
     expect(serialized).not.toContain(TASK_TITLE);
     expect(serialized).not.toContain(MEMORY_CONTENT);
@@ -69,7 +69,7 @@ describe("context engine — protected reads go through the permission gateway",
     const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.currentTasks.map((t) => t.title)).toContain(TASK_TITLE);
     expect(ctx.relevantMemories).toEqual([]);
-    expect(ctx.withheld.sort()).toEqual(["decisions", "future", "history", "knowledge", "life", "memories"]); // nothing else was granted either
+    expect(ctx.withheld.sort()).toEqual(["decisions", "future", "history", "knowledge", "learning", "life", "memories"]); // nothing else was granted either
     expect(JSON.stringify(ctx)).not.toContain(MEMORY_CONTENT);
   });
 
@@ -81,6 +81,7 @@ describe("context engine — protected reads go through the permission gateway",
     await grant(principalId, agentKey, "system.activity", "angel:activity", "ACTIVITY_READ", "READ");
     await grant(principalId, agentKey, "system.life", "angel:life", "LIFE_READ", "READ");
     await grant(principalId, agentKey, "system.future", "angel:future", "FUTURE_READ", "READ");
+    await grant(principalId, agentKey, "system.learning", "angel:learning", "LEARNING_READ", "READ");
 
     const ctx = await engine.buildContext({ identity: identityFor(principalId), agentKey, query: "alpha-content" });
     expect(ctx.withheld).toEqual([]);

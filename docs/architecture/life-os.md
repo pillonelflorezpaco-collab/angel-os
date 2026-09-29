@@ -54,3 +54,16 @@ CURRENT → GAP → DESIRED → NEXT, in the owner's words (`Aspiration`), with 
 - **Isolation:** store ownership checks + DB triggers (`life_owner_guard`, `append_only_guard`, terminal-state guard) as in Life OS.
 - **Skill** `system.future` (`FUTURE_READ`; ASPIRATION_CREATE/UPDATE/ACHIEVE/RELEASE, METRIC_CREATE, METRIC_READING_RECORD — all LOW; voice needs approval).
 - **Context** gets `activeAspirations` (`withheld: ["future"]` without permission).
+
+# Learning Lab (BUILD #15)
+
+Topics (`LearningTopic`), self-reported study sessions, and recall cards with an append-only review history.
+- **Derived, never stored.** What is due, a card's interval, ease, lapses and streak come from `learning/schedule.ts` — a pure SM-2 variant over the review
+  history with the clock injected. No score, XP, streak reward or "mastered" flag exists anywhere; overviews are counts (minutes in the last 7/30 days, cards, due, never reviewed).
+- **Honest inputs.** Sessions (1–720 whole minutes) and grades (0 again … 3 easy) are the owner's own reports; neither may be dated in the future; both tables are append-only (DB trigger).
+  Sessions record Activity `LEARNING_SESSION` by reference (the note is not copied).
+- **Owner-authored cards.** Prompt and answer are written by the owner; a card may reference an owned knowledge item as its source. Nothing here generates content.
+- **Lifecycle.** Topic ACTIVE ⇄ PAUSED → COMPLETED (owner's claim, final; can't complete twice). Cards ACTIVE → RETIRED (final, no more reviews). Sessions and new cards need an ACTIVE topic; paused/completed topics' cards are not due.
+- **Isolation.** Same as the rest of Life OS: store ownership checks + `life_owner_guard` / `life_immutable_guard` / `append_only_guard` triggers.
+- **Skill** `system.learning` (`LEARNING_READ`; TOPIC_CREATE/UPDATE/SET_STATUS, SESSION_LOG, CARD_CREATE/REVIEW/RETIRE — LOW; voice needs approval). Context gets `activeLearning` (`withheld: ["learning"]`).
+- Known limit: session minutes are unverifiable self-reports; they are shown as such ("self-reported") and never rewarded.

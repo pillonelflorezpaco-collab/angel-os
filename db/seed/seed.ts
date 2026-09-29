@@ -65,6 +65,12 @@ async function main() {
     create: { key: "system.future", name: "System Future Self", description: "Aspirations (current, gap, desired, next) with evidence-based metrics." },
   });
 
+  const learningSkill = await db.skill.upsert({
+    where: { key: "system.learning" },
+    update: {},
+    create: { key: "system.learning", name: "System Learning Lab", description: "Learning topics, study sessions and recall cards." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -157,6 +163,14 @@ async function main() {
     { resource: "angel:future", action: "ASPIRATION_RELEASE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     { resource: "angel:future", action: "METRIC_CREATE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     { resource: "angel:future", action: "METRIC_READING_RECORD", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:learning", action: "LEARNING_READ", category: "READ", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "TOPIC_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "TOPIC_UPDATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "TOPIC_SET_STATUS", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "SESSION_LOG", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "CARD_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "CARD_REVIEW", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "CARD_RETIRE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",
