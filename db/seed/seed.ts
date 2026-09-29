@@ -232,7 +232,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${tasksSkill.key}, ${memorySkill.key}, ${decisionsSkill.key}, ${activitySkill.key}, ${knowledgeSkill.key}, ${calendarSkill.key}, ${gmailSkill.key}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
   );
 }
 
