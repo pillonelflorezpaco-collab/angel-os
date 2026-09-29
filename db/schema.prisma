@@ -1,0 +1,456 @@
+// Angel OS — Prisma schema
+// PostgreSQL is the single structured source of truth (see docs/ARCHITECTURE.md).
+// Every personal object is scoped to `principalId`. There is exactly one
+// Principal row today (Angel); the FK shape stays ready for multi-user later
+// without any multi-user logic being implemented now.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Principal ────────────────────────────────────────────────────────────
+
+model Principal {
+  id        String   @id @default(uuid())
+  name      String
+  timezone  String   @default("UTC")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  people      Person[]
+  projects    Project[]
+  tasks       Task[]
+  reminders   Reminder[]
+  goals       Goal[]
+  decisions   Decision[]
+  memories    Memory[]
+  permissions Permission[]
+  approvals   ApprovalRequest[]
+  auditLogs   AuditLog[]
+  connections Connection[]
+  oauthStates OAuthState[]
+
+  @@map("principals")
+}
+
+// ── Structured state ────────────────────────────────────────────────────
+
+// People Angel knows — NOT employees, NOT agency staff.
+model Person {
+  id           String   @id @default(uuid())
+  principalId  String
+  principal    Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  name         String
+  relationship String?  // e.g. "friend", "sister", "colleague at X" — free text, not a role/org concept
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([principalId])
+  @@map("people")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  principalId String
+  principal   Principal     @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tasks     Task[]
+  decisions Decision[]
+
+  @@index([principalId])
+  @@map("projects")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  principalId String
+  principal   Principal  @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  relatedPersonId String?
+  relatedPerson   Person? @relation(fields: [relatedPersonId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  dueAt       DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  reminders Reminder[]
+
+  @@index([principalId])
+  @@index([projectId])
+  @@map("tasks")
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  DISMISSED
+}
+
+model Reminder {
+  id          String         @id @default(uuid())
+  principalId String
+  principal   Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  message     String
+  remindAt    DateTime
+  status      ReminderStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([principalId])
+  @@index([remindAt])
+  @@map("reminders")
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  ABANDONED
+}
+
+enum GoalHorizon {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+model Goal {
+  id          String      @id @default(uuid())
+  principalId String
+  principal   Principal   @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      GoalStatus  @default(ACTIVE)
+  horizon     GoalHorizon @default(MEDIUM)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([principalId])
+  @@map("goals")
+}
+
+// A Decision is CURRENT STATE that becomes HISTORY once superseded — it is
+// never rewritten, only ever superseded by a new row referencing it, so
+// "what did I decide about X" stays answerable from a stable log.
+model Decision {
+  id            String    @id @default(uuid())
+  principalId   String
+  principal     Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title         String
+  context       String?
+  decision      String
+  supersedesId  String?   @unique
+  supersedes    Decision? @relation("DecisionHistory", fields: [supersedesId], references: [id])
+  supersededBy  Decision? @relation("DecisionHistory")
+  decidedAt     DateTime  @default(now())
+
+  @@index([principalId])
+  @@map("decisions")
+}
+
+// ── Memory (distinct from structured state and knowledge) ─────────────────
+
+enum MemoryType {
+  FACT
+  PREFERENCE
+  PRINCIPLE
+  DECISION
+  GOAL
+  HABIT
+  EXPERIENCE
+  PERSON
+  PROJECT
+  INFERENCE
+}
+
+enum MemoryStatus {
+  ACTIVE       // confirmed / standing
+  UNCONFIRMED  // inferred, not yet promoted to a standing fact
+  EXPIRED
+  RETRACTED
+}
+
+model Memory {
+  id              String       @id @default(uuid())
+  principalId     String
+  principal       Principal    @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  type            MemoryType
+  content         String
+  source          String       // e.g. "conversation", "manual", "inference:task-pattern"
+  confidence      Float        @default(1.0) // 0..1, lower for INFERENCE
+  status          MemoryStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  lastConfirmedAt DateTime?
+  expiresAt       DateTime?
+
+  @@index([principalId])
+  @@index([type])
+  @@index([status])
+  @@map("memories")
+}
+
+// ── Knowledge (Markdown files on disk; this table is metadata only) ───────
+
+model KnowledgeDocument {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  title     String
+  path      String   // relative path under knowledge/markdown/
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_documents")
+}
+
+// ── Skills & Agents (registry, not credentials) ────────────────────────────
+
+model Skill {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "system.tasks"
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  permissions Permission[]
+
+  @@map("skills")
+}
+
+model Agent {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "jarvis-core"
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  permissions Permission[]
+  approvals   ApprovalRequest[]
+  auditLogs   AuditLog[]
+
+  @@map("agents")
+}
+
+// ── Permission & Action Gateway ────────────────────────────────────────────
+
+enum ActionCategory {
+  READ
+  WRITE
+  EXECUTE
+}
+
+enum PermissionState {
+  ALLOWED
+  DENIED
+  APPROVAL_REQUIRED
+}
+
+// One row = "this agent, using this skill, may take this action on this
+// resource, under this permission state". Deliberately not copied from
+// jarvis-1.0's access_grants: this is agent/skill/action scoped, not
+// person-to-person delegation.
+model Permission {
+  id          String          @id @default(uuid())
+  principalId String
+  principal   Principal       @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  agentId     String
+  agent       Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillId     String
+  skill       Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  resource    String          // e.g. "gmail:angel@example.com", "calendar:primary"
+  action      String          // specific action key, e.g. "SEND_EMAIL", "READ", "DELETE_EVENT"
+  category    ActionCategory
+  state       PermissionState
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([principalId, agentId, skillId, resource, action])
+  @@index([principalId])
+  @@map("permissions")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model ApprovalRequest {
+  id           String         @id @default(uuid())
+  principalId  String
+  principal    Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  agentId      String
+  agent        Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillKey     String
+  resource     String
+  action       String
+  parameters   Json           @default("{}")
+  status       ApprovalStatus @default(PENDING)
+  reason       String?
+  requestedAt  DateTime       @default(now())
+  decidedAt    DateTime?
+  expiresAt    DateTime?
+
+  @@index([principalId])
+  @@index([status])
+  @@map("approval_requests")
+}
+
+// ── Audit log ────────────────────────────────────────────────────────────
+
+enum AuditEventType {
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+  ACTION_REQUESTED
+  ACTION_APPROVED
+  ACTION_REJECTED
+  ACTION_EXECUTED
+  ACTION_FAILED
+  ACTION_DENIED
+  CONNECTION_CREATED
+  CONNECTION_DISABLED
+  CONNECTION_REMOVED
+  CONNECTION_AUTHORIZED
+  CONNECTION_FAILED
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+  DENIED
+  PENDING
+}
+
+model AuditLog {
+  id          String         @id @default(uuid())
+  principalId String
+  principal   Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  agentId     String?
+  agent       Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  eventType   AuditEventType
+  resource    String?
+  action      String?
+  result      AuditResult
+  source      String         // e.g. "api", "cli", "system"
+  metadata    Json           @default("{}") // never store secrets here
+  createdAt   DateTime       @default(now())
+
+  @@index([principalId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Integration / Connector layer ──────────────────────────────────────────
+//
+// A Connection is a principal-scoped record of an authenticated external
+// account (e.g. "Angel's Google account"). It intentionally holds NO secret
+// value — see connectors/credentials/index.ts's CredentialStore. `provider`
+// is a free-form key (not an enum) so a new provider never needs a schema
+// migration, the same way `tool_accounts.tool_key` worked in jarvis-1.0 —
+// pattern reused, no jarvis-1.0 code or table imported.
+
+enum ConnectionStatus {
+  PENDING   // created, not yet authorized
+  ACTIVE    // authorized and usable
+  DISABLED  // explicitly turned off by the principal, still on record
+  ERROR     // last known operation failed (see ConnectionHealthStatus)
+}
+
+model Connection {
+  id                 String           @id @default(uuid())
+  principalId        String
+  principal          Principal        @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  provider           String           // e.g. "google", "telegram" — free-form, not an enum
+  externalAccountId  String           // the account identifier on the provider's side, e.g. an email
+  displayName        String?
+  status             ConnectionStatus @default(PENDING)
+  // Points at a secret in CredentialStore — never the secret itself. Null
+  // until a connection is actually authorized.
+  credentialRef       String?
+  metadata            Json            @default("{}") // never store secrets here
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@unique([principalId, provider, externalAccountId])
+  @@index([principalId])
+  @@map("connections")
+}
+
+// A short-lived, single-use, principal-bound OAuth state token. Binds an
+// authorization callback back to the principal that initiated it, so a
+// caller cannot supply an arbitrary ?code=...&state=... and attach it to
+// any principal (see docs/SECURITY.md "OAuth state security"). Built here
+// specifically because the API has no real session/auth layer yet — this
+// is the explicit, documented substitute for "the session that started the
+// flow", not a pretense of production authentication.
+model OAuthState {
+  id          String    @id @default(uuid())
+  principalId String
+  principal   Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  provider    String
+  state       String    @unique // opaque random token, placed in the OAuth `state` param
+  redirectUri String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  consumedAt  DateTime? // set the instant the callback consumes it — never reusable after
+
+  @@index([principalId])
+  @@index([expiresAt])
+  @@map("oauth_states")
+}
+
+// Backing store for EncryptedCredentialStore (connectors/credentials/
+// encrypted.ts). Holds ONLY ciphertext — see that file for the encryption
+// boundary and key-source documentation. `ref` (not principalId) is the
+// lookup key, matching the CredentialStore interface's shape; callers
+// choose refs that already encode the principal (e.g.
+// "google:<connectionId>") so a leaked ref can't be reused across
+// principals by guesswork alone.
+model CredentialSecret {
+  id         String   @id @default(uuid())
+  ref        String   @unique
+  ciphertext String
+  iv         String
+  authTag    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("credential_secrets")
+}
