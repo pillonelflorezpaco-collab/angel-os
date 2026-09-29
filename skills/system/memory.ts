@@ -1,5 +1,5 @@
 import { getMemoryProvider } from "../../memory/index.js";
-import type { AddMemoryInput, SearchMemoryInput, UpdateMemoryInput } from "../../memory/types/index.js";
+import type { AddMemoryInput, MemoryRecord, SearchMemoryInput, UpdateMemoryInput } from "../../memory/types/index.js";
 import { gatewayExecute } from "../../gateway/index.js";
 import type { Result } from "../../core/types/index.js";
 
@@ -10,6 +10,19 @@ import type { Result } from "../../core/types/index.js";
 
 export const SKILL_KEY = "system.memory";
 export const RESOURCE = "angel:memory";
+
+/**
+ * One line per memory, always labelled with its type. An INFERENCE is
+ * labelled as unconfirmed until the principal confirms it, and stays an
+ * INFERENCE even after confirmation — nothing here or anywhere else
+ * rewrites a memory's type.
+ */
+export function describeMemory(m: Pick<MemoryRecord, "type" | "status" | "content">): string {
+  if (m.type === "INFERENCE") {
+    return m.status === "ACTIVE" ? `[inference, confirmed] ${m.content}` : `[inference, unconfirmed] ${m.content}`;
+  }
+  return `[${m.type.toLowerCase()}] ${m.content}`;
+}
 
 export interface RememberInput {
   principalId: string;

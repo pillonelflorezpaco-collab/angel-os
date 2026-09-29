@@ -1,11 +1,11 @@
 import { parseIntent } from "./router/index.js";
-import { planFromIntent, resolveReminderTime } from "./planner/index.js";
-import { createTask, listTasks, createReminder } from "../skills/system/tasks.js";
-import { remember, search as searchMemory } from "../skills/system/memory.js";
+import { planFromIntent } from "./planner/index.js";
+import { createTask, listTasks, listReminders, createRelativeReminder } from "../skills/system/tasks.js";
+import { remember, search as searchMemory, describeMemory } from "../skills/system/memory.js";
 import { queryDecisions } from "../skills/system/decisions.js";
-import { today as calendarToday, formatEventsAsContext } from "../skills/integrations/calendar.js";
-import type { CalendarEvent } from "../connectors/types/calendar.js";
-import { DeterministicContextEngine } from "../context/retrieval/index.js";
+import { today as calendarToday, formatEventsAsContext, type TodayResult } from "../skills/integrations/calendar.js";
+import type { MemoryRecord } from "../memory/types/index.js";
+import { toSafeError, logInternalError } from "./errors.js";
 import type { Result } from "./types/index.js";
 
 export const JARVIS_AGENT_KEY = "jarvis-core";
@@ -17,28 +17,35 @@ export interface JarvisRequest {
 
 /**
  * Jarvis Core, v0.1: deterministic pipeline.
- *   Input -> Intent (router) -> Context (context engine) -> Plan (planner)
- *   -> Action (skill, through the gateway) -> Result
+ *   Input -> Intent (router) -> Plan (planner) -> Action (skill, through
+ *   the gateway) -> Result
  *
  * Jarvis Core ORCHESTRATES ONLY. It never imports Prisma and never calls
- * MemoryProvider directly for a domain operation — every intent maps to a
- * skill call, and every skill executes through the gateway. This is the
- * fix for the Jarvis Core bypass found in the security audit: memory and
- * decision reads/writes used to skip the skill/gateway layer entirely.
+ * MemoryProvider directly — every intent maps to a skill call, and every
+ * skill executes through the gateway.
+ *
+ * The context engine is not invoked here: its output had no consumer (the
+ * deterministic planner doesn't use it), so calling it only produced
+ * permission checks and audit entries for data nobody read. It is gated
+ * and ready for the future LLM planner that will consume it — see
+ * context/retrieval/index.ts.
  */
 export class JarvisCore {
-  private readonly contextEngine = new DeterministicContextEngine();
-
   async handle(request: JarvisRequest): Promise<Result> {
-    const intent = parseIntent(request.input);
+    try {
+      return await this.dispatch(request);
+    } catch (err) {
+      // Last line of defense for anything that fails outside a skill's
+      // gatewayExecute (which sanitizes its own failures): the user gets a
+      // safe message, never raw error text.
+      logInternalError("jarvis-core", err);
+      return { status: "FAILED", message: toSafeError(err).publicMessage };
+    }
+  }
 
-    // Context is assembled for every request so a future LLM-assisted
-    // planner has it available; v0.1's deterministic planner doesn't need
-    // it yet, but the pipeline shape is already correct end to end.
-    await this.contextEngine.buildContext({
-      principalId: request.principalId,
-      query: request.input,
-    });
+  /** Intent dispatch. Exposed only so tests can exercise handle()'s error boundary. */
+  async dispatch(request: JarvisRequest): Promise<Result> {
+    const intent = parseIntent(request.input);
 
     switch (intent.name) {
       case "memory.remember": {
@@ -52,11 +59,20 @@ export class JarvisCore {
 
       case "memory.search": {
         const query = intent.slots.query ?? request.input;
-        return searchMemory({
+        const result = await searchMemory({
           principalId: request.principalId,
           agentKey: JARVIS_AGENT_KEY,
           query: { query },
         });
+        if (result.status !== "EXECUTED") return result;
+        const memories = result.data as MemoryRecord[];
+        return {
+          status: "EXECUTED",
+          // Each line carries its type, so an unconfirmed inference is
+          // never presented as a fact.
+          message: memories.length ? memories.map(describeMemory).join("\n") : "No matching memories.",
+          data: memories,
+        };
       }
 
       case "decision.query": {
@@ -68,13 +84,16 @@ export class JarvisCore {
         });
       }
 
+      case "reminder.list":
+        return listReminders({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY });
+
       case "calendar.today": {
         const result = await calendarToday({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY });
         if (result.status !== "EXECUTED") return result;
-        const events = result.data as CalendarEvent[];
+        const { timeZone, events } = result.data as TodayResult;
         return {
           status: "EXECUTED",
-          message: `Today's calendar:\n${formatEventsAsContext(events)}`,
+          message: `Today's calendar:\n${formatEventsAsContext(events, timeZone)}`,
           data: events,
         };
       }
@@ -110,15 +129,19 @@ export class JarvisCore {
       case "READ":
         return listTasks({ principalId, agentKey: JARVIS_AGENT_KEY });
       case "CREATE_REMINDER": {
-        const remindAt = resolveReminderTime(
-          parameters.hour as string | undefined,
-          parameters.minute as string | undefined
-        );
-        return createReminder({
+        const hour = parameters.hour === undefined ? 9 : Number(parameters.hour);
+        const minute = parameters.minute === undefined ? 0 : Number(parameters.minute);
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+          return { status: "FAILED", message: "That time isn't valid. Use a 24-hour time like 10 or 14:30." };
+        }
+        // Interpreted as "tomorrow" in the principal's timezone by the skill.
+        return createRelativeReminder({
           principalId,
           agentKey: JARVIS_AGENT_KEY,
           message: String(parameters.message ?? "Reminder"),
-          remindAt,
+          dayOffset: 1,
+          hour,
+          minute,
         });
       }
       default:

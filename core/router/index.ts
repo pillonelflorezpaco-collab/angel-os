@@ -27,7 +27,11 @@ export function parseIntent(raw: string): Intent {
     };
   }
 
-  if (/^(what are my (current )?(tasks|reminders)|list (my )?tasks)/i.test(lower)) {
+  if (/^(what are my (current )?reminders|what reminders do i have|show( me)? my reminders|list( my)? reminders)\b/i.test(lower)) {
+    return { name: "reminder.list", raw: text, slots: {} };
+  }
+
+  if (/^(what are my (current )?tasks|list (my )?tasks)/i.test(lower)) {
     return { name: "task.list", raw: text, slots: {} };
   }
 

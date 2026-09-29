@@ -83,3 +83,22 @@ APPROVAL_REQUIRED.**
 | F11 | No observability beyond the audit log: no structured logging, no request IDs, no lint. | — | Low now |
 
 None of these invalidate the architecture. All are fixable inside it.
+
+## Resolved by the security & correctness patch
+
+| # | Fix | Where | Regression tests |
+|---|---|---|---|
+| F1 | Context engine reads tasks/memories only through skills → `gatewayExecute` (per-agent permission, fail-closed, audited); denied sections listed in `withheld`, never fetched. Core no longer calls it (no consumer yet) | `context/retrieval/index.ts`, `core/index.ts` | `tests/context-permissions.test.ts` |
+| F4 | `reminder.list` routed and handled; "reminders" removed from the task pattern | `core/router/index.ts`, `core/index.ts` | `tests/reminder-routing.test.ts` |
+| F5 | Expired memories excluded at `searchMemory` (kept in DB); type/status preserved through context; replies label `[fact]` vs `[inference, unconfirmed]`; no path changes a memory's type | `memory/local/index.ts`, `skills/system/memory.ts`, `context/retrieval/index.ts` | `tests/memory-integrity.test.ts` |
+| F6 | "Today" and "tomorrow at HH:MM" use `Principal.timezone` via `core/time.ts` (built-in `Intl`, DST-safe); calendar times shown in the user's zone | `core/time.ts`, `skills/system/principal.ts`, `skills/system/tasks.ts`, `skills/integrations/calendar.ts` | `tests/timezone.test.ts` |
+| F7 | Only `PublicError` messages reach users; audit stores `{errorType, code?, public}`; Core has a sanitizing boundary; redacted developer log | `core/errors.ts`, `gateway/index.ts`, `core/index.ts` | `tests/error-sanitization.test.ts` |
+
+Each regression suite was checked by temporarily reverting its fix and
+confirming the suite fails (expiry: 2 failures, routing: 8, errors: 3,
+timezone: 1, context: 5), then restoring. No database migration was
+needed.
+
+Still open: F2 (approval expiry — deliberately deferred to the approval
+execution build), F3, F8, F9, F10, F11, and the Express 4 async-route
+issue described in `docs/SECURITY.md` "Error handling".

@@ -1,4 +1,5 @@
 import type { MemoryStatus, MemoryType } from "@prisma/client";
+import { PublicError } from "../../core/errors.js";
 
 export interface MemoryRecord {
   id: string;
@@ -36,10 +37,9 @@ export interface UpdateMemoryInput {
 }
 
 /** Thrown when `id` doesn't exist, or exists but belongs to a different principal. */
-export class MemoryNotFoundError extends Error {
+export class MemoryNotFoundError extends PublicError {
   constructor(id: string) {
     super(`Memory ${id} not found for this principal.`);
-    this.name = "MemoryNotFoundError";
   }
 }
 

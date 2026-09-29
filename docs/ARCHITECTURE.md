@@ -98,13 +98,23 @@ did I decide about X" stays answerable and the timeline stays intact.
 
 ## Context Engine (`context/`)
 
-Purpose: assemble a *small, relevant* context package before every Jarvis
-Core request — never load the entire database into an LLM call. v0.1's
-`DeterministicContextEngine` pulls: open tasks, a handful of memory search
-hits, and a handful of knowledge search hits, all scoped to the request's
-query and principal. This is intentionally simple and legible; see
-`docs/ROADMAP.md` for the planned upgrade path (embeddings-based retrieval)
-once the deterministic version is proven.
+Purpose: assemble a *small, relevant* context package for a future
+LLM-assisted planner — never load the entire database into an LLM call.
+`DeterministicContextEngine` pulls open tasks, a handful of memory search
+hits, and a handful of knowledge hits, scoped to the query and principal.
+
+**Protected data is read only through skills**, so every read is a normal
+`gatewayExecute` call for the requesting `agentKey`: permission-checked
+(missing permission = DENIED), and audited as `ACTION_EXECUTED` /
+`ACTION_DENIED` (resource and action only, never memory content). Being
+internal grants no extra access. A denied section is empty and listed in
+`withheld`; its data is never fetched. Memories keep `type`, `status`, and
+a derived `confirmed` flag, so an inference is never presented as a fact.
+
+Jarvis Core does **not** call the context engine today: the deterministic
+planner has no use for it, and calling it only produced permission checks
+and audit entries for data nobody read. It is ready for the first
+consumer (see `docs/architecture/next-stage-architecture.md`).
 
 ## Jarvis Core (`core/`)
 

@@ -10,6 +10,7 @@ import { checkPermission } from "./permissions/index.js";
 import { createApprovalRequest } from "./approvals/index.js";
 import { recordAuditEvent } from "./audit/index.js";
 import type { ActionRequest, Result } from "../core/types/index.js";
+import { toSafeError, logInternalError } from "../core/errors.js";
 
 export type ActionExecutor = () => Promise<unknown>;
 
@@ -72,6 +73,12 @@ export async function gatewayExecute(
     });
     return { status: "EXECUTED", message: "Action executed.", data };
   } catch (err) {
+    // Raw error text never reaches the user or the audit log: only
+    // PublicError messages are shown, and the audit gets structured,
+    // safe fields (error type, DB error code). Detail goes to the
+    // redacted developer log.
+    const safe = toSafeError(err);
+    if (!safe.audit.public) logInternalError(`${request.skillKey}/${request.action}`, err);
     await recordAuditEvent({
       principalId: request.principalId,
       agentKey: request.agentKey,
@@ -80,12 +87,9 @@ export async function gatewayExecute(
       action: request.action,
       result: "FAILURE",
       source,
-      metadata: { error: err instanceof Error ? err.message : String(err) },
+      metadata: safe.audit,
     });
-    return {
-      status: "FAILED",
-      message: err instanceof Error ? err.message : "Action failed.",
-    };
+    return { status: "FAILED", message: safe.publicMessage };
   }
 }
 

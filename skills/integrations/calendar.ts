@@ -6,6 +6,9 @@ import { getConnectorRegistry } from "../../connectors/registry/index.js";
 import { GoogleOAuthClient, loadGoogleOAuthConfig } from "../../connectors/google/oauthClient.js";
 import type { CalendarConnector, CalendarEvent, ResolvedCredential } from "../../connectors/types/calendar.js";
 import type { Result } from "../../core/types/index.js";
+import { PublicError } from "../../core/errors.js";
+import { localDayBounds, formatLocalTime } from "../../core/time.js";
+import { getPrincipalTimeZone } from "../system/principal.js";
 
 // The Calendar Skill: the ONLY place in Angel OS allowed to touch a
 // calendar connector. It never bypasses gatewayExecute, never accesses
@@ -22,24 +25,21 @@ export const RESOURCE = "angel:calendar";
 // like system.tasks's single READ action covers listTasks.
 const ACTION = "READ";
 
-export class ConnectionMissingError extends Error {
+export class ConnectionMissingError extends PublicError {
   constructor() {
     super("No active Google Calendar connection for this principal. Connect Google Calendar first.");
-    this.name = "ConnectionMissingError";
   }
 }
 
-export class CredentialMissingError extends Error {
+export class CredentialMissingError extends PublicError {
   constructor() {
     super("Google Calendar connection has no stored credential. Reconnect required.");
-    this.name = "CredentialMissingError";
   }
 }
 
-export class CredentialExpiredError extends Error {
+export class CredentialExpiredError extends PublicError {
   constructor() {
     super("Google Calendar authorization has expired or been revoked. Reconnect required.");
-    this.name = "CredentialExpiredError";
   }
 }
 
@@ -218,32 +218,39 @@ export async function getEvent(input: GetEventInput): Promise<Result> {
   );
 }
 
-/** "What do I have today?" — today's events across the principal's primary calendar, normalized for Jarvis to present. */
+export interface TodayResult {
+  timeZone: string;
+  events: CalendarEvent[];
+}
+
+/**
+ * "What do I have today?" — today's events on the principal's primary
+ * calendar. "Today" is the principal's local day in their configured
+ * timezone, never the server's day.
+ */
 export async function today(input: CalendarSkillInput): Promise<Result> {
   return gatewayExecute(
     { principalId: input.principalId, agentKey: input.agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: ACTION, parameters: { query: "today" } },
     () =>
-      withGoogleCalendar(input.principalId, async (connector, credential) => {
+      withGoogleCalendar(input.principalId, async (connector, credential): Promise<TodayResult> => {
+        const timeZone = await getPrincipalTimeZone(input.principalId);
         const calendars = await connector.listCalendars(credential);
         const primary = calendars.find((c) => c.primary) ?? calendars[0];
-        if (!primary) return [] as CalendarEvent[];
+        if (!primary) return { timeZone, events: [] };
 
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-        return connector.listEvents(credential, { calendarId: primary.id, timeMin: start, timeMax: end });
+        const { start, end } = localDayBounds(new Date(), timeZone, 0);
+        const events = await connector.listEvents(credential, { calendarId: primary.id, timeMin: start, timeMax: end });
+        return { timeZone, events };
       }),
     "skill.integrations.calendar"
   );
 }
 
-/** Formats events the way `docs/ARCHITECTURE.md`'s example shows — this is the "structured context for Jarvis" the mission asked for, built on demand rather than precomputed into every request. */
-export function formatEventsAsContext(events: CalendarEvent[]): string {
+/** Formats events for Jarvis's reply, with times shown in the principal's timezone. */
+export function formatEventsAsContext(events: CalendarEvent[], timeZone: string): string {
   if (events.length === 0) return "No events today.";
   const lines = events.map((e) => {
-    const time = e.allDay
-      ? "All day"
-      : e.start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+    const time = e.allDay ? "All day" : formatLocalTime(e.start, timeZone);
     return `${time} — ${e.title}`;
   });
   return lines.join("\n");

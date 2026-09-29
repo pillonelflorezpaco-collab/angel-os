@@ -270,6 +270,40 @@ external credentials (once implemented) should hold a reference (an env var
 name, a secrets-manager key) — never the secret itself — following the same
 "credential reference indirection" principle carried over from `jarvis-1.0`.
 
+## Error handling
+
+Raw internal error text never reaches the user or the audit log.
+`core/errors.ts`:
+
+- `PublicError` marks an error whose message was written for the user
+  (e.g. "No active Google Calendar connection…"). Only these messages are
+  shown.
+- Every other error becomes a generic message. `gatewayExecute`'s audit
+  entry stores structured, safe fields only — `{ errorType, code?, public }`
+  (e.g. `PrismaClientKnownRequestError`, `P2002`) — never the message,
+  which can contain SQL, user content, paths, or connection strings.
+- `JarvisCore.handle` wraps dispatch with the same sanitization, for
+  failures outside a skill.
+- The raw error goes to stderr through `logInternalError`, passed through
+  `redactForLog` (connection-string credentials, bearer/Google tokens,
+  private keys, `key=value` secrets). This is best-effort defence in depth,
+  not permission to put secrets in errors.
+
+Known gap: Express 4 does not catch rejected promises in async route
+handlers. An error thrown directly in a route (outside `JarvisCore` or a
+skill — e.g. the database being unreachable in `getOrCreatePrincipal`)
+does not leak text, but becomes an unhandled rejection, which under
+Node's default behaviour terminates the API process. See
+`docs/architecture/current-state.md`.
+
+## Time and timezones
+
+Instants are stored and compared in UTC. User-relative concepts ("today",
+"tomorrow", "10:00") are interpreted in the principal's IANA timezone
+(`Principal.timezone`, falling back to UTC if invalid) by `core/time.ts`,
+which uses only the built-in `Intl` API. Only skills read the timezone —
+inside their gateway executor, after the permission check.
+
 ## What this repo deliberately does not do
 
 - Execute arbitrary shell commands from user input.

@@ -38,6 +38,9 @@ export class LocalMemoryProvider implements MemoryProvider {
         principalId: input.principalId,
         type: input.type,
         status: { in: ["ACTIVE", "UNCONFIRMED"] },
+        // Expired memories are kept for history but never returned as
+        // active memory. Both sides are UTC instants — no timezone math.
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         content: { contains: input.query, mode: "insensitive" },
       },
       orderBy: { updatedAt: "desc" },
