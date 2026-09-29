@@ -59,8 +59,8 @@ describe("interface boundary rules", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("application/ has no database, skills, memory, knowledge, context, or connector access (it reaches data only through the gateway)", () => {
-    expect(violations("application", /(^|\/)(db|skills|memory|knowledge|context|connectors)(\/|$)|@prisma\/client/)).toEqual([]);
+  it("application/ has no database, skills, memory, knowledge, or connector access (it reaches data only through the gateway or the context engine, which itself reads only through skills)", () => {
+    expect(violations("application", /(^|\/)(db|skills|memory|knowledge|connectors)(\/|$)|@prisma\/client/)).toEqual([]);
   });
 
   it("api/ has no database access and no direct memory/knowledge/context access", () => {

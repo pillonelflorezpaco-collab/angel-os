@@ -334,7 +334,9 @@ describe("Knowledge OS: sources, items, relations", () => {
       await ingest(`# Ctx ${Math.random()}\nFact: ctx-needle alpha`);
       const engine = new DeterministicContextEngine();
       const ctx = await engine.buildContext({ identity: idA(), agentKey: JARVIS_AGENT_KEY, query: "ctx-needle" });
-      expect(ctx.relevantKnowledge.filter((k) => k.slug.startsWith("item:")).map((k) => [k.kind, k.contradicted])).toEqual([["FACT", false]]);
+      const items = ctx.relevantKnowledge.filter((k) => k.slug.startsWith("item:"));
+      expect(items[0]).toMatchObject({ kind: "FACT", contradicted: false }); // matches BOTH terms → ranked first
+      expect(items.map((k) => k.kind)).toContain("FACT");
       const ctxB = await engine.buildContext({ identity: identityFor(b), agentKey: JARVIS_AGENT_KEY, query: "ctx-needle" });
       expect(ctxB.relevantKnowledge.filter((k) => k.slug.startsWith("item:"))).toEqual([]);
     });

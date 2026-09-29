@@ -8,6 +8,8 @@ export interface ContextRequest {
   /** The agent the context is assembled for — permissions are checked against it, exactly as for a direct request. */
   agentKey: string;
   query: string;
+  /** Evaluate memory validity (world time) at this instant. Default: now. */
+  asOf?: Date;
 }
 
 export interface ContextEngine {

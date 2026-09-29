@@ -45,6 +45,10 @@ export function parseIntent(raw: string): Intent {
     return { name: "memory.search", raw: text, slots: { query } };
   }
 
+  // "What do YOU know about X?" / "brief me on X" / "tell me about X": the full context, not just memory.
+  const briefMatch = text.match(/^(?:what do you know about|brief me on|tell me about|what can you tell me about)\s+(.+?)[?.!]*$/i);
+  if (briefMatch) return { name: "context.brief", raw: text, slots: { topic: briefMatch[1].trim() } };
+
   if (/^what did i decide about /i.test(lower)) {
     const topic = text.replace(/^what did i decide about /i, "").trim();
     return { name: "decision.query", raw: text, slots: { topic } };

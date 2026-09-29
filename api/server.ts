@@ -2,6 +2,7 @@ import express from "express";
 import { z } from "zod";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { handleInterfaceMessage, MAX_INPUT_CHARS } from "../application/dispatcher.js";
+import { getContext, MAX_CONTEXT_QUERY_CHARS } from "../application/context.js";
 import { createTask, listTasks, createReminder, listReminders } from "../skills/system/tasks.js";
 import { search as searchMemory, MEMORY_TYPE_VALUES } from "../skills/system/memory.js";
 import { searchKnowledgeItems, getKnowledgeItem, listKnowledgeSources, ingestKnowledge, KNOWLEDGE_KIND_VALUES } from "../skills/system/knowledge.js";
@@ -184,6 +185,18 @@ export function createApp(options: AppOptions = {}) {
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
       const { q, type, subject } = parsed.data;
       res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query: q, ...(type ? { type } : {}), ...(subject ? { subject } : {}) } }));
+    })
+  );
+
+  // Context: what Jarvis would be given for a question. Permission-aware: denied sections are
+  // listed in `withheld`, failed ones in `unavailable`; nothing is silently dropped.
+  const contextQuerySchema = z.object({ q: z.string().max(MAX_CONTEXT_QUERY_CHARS).default(""), asOf: z.string().datetime().optional() });
+  api.get(
+    "/context",
+    asyncRoute(async (req, res) => {
+      const parsed = contextQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await getContext(identityOf(req), parsed.data.q, parsed.data.asOf ? new Date(parsed.data.asOf) : undefined));
     })
   );
 

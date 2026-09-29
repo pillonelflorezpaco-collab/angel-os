@@ -9,6 +9,8 @@ import type { MemoryRecord } from "../memory/types/index.js";
 import { JARVIS_AGENT_KEY } from "../skills/agent.js";
 import { registerSkillActions } from "../skills/manifest.js";
 import type { IdentityContext } from "../identity/index.js";
+import { DeterministicContextEngine } from "../context/retrieval/index.js";
+import { formatContext } from "../context/format.js";
 import { toSafeError, logInternalError } from "./errors.js";
 import type { Result } from "./types/index.js";
 
@@ -88,6 +90,12 @@ export class JarvisCore {
           agentKey: JARVIS_AGENT_KEY,
           topic,
         });
+      }
+
+      case "context.brief": {
+        if (!request.identity) return NO_IDENTITY;
+        const ctx = await new DeterministicContextEngine().buildContext({ identity: request.identity, agentKey: JARVIS_AGENT_KEY, query: intent.slots.topic ?? request.input });
+        return { status: "EXECUTED", message: formatContext(ctx), data: ctx };
       }
 
       case "activity.today":

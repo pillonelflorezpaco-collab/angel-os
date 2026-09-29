@@ -111,6 +111,11 @@ describe("execution-path architecture boundaries", () => {
       expect(files.some(([, src]) => /\bgetDb\b/.test(src))).toBe(false);
     });
 
+    it("the context engine is used only by Core and the application facade; it is never a data source for skills or the gateway", () => {
+      expect(importersOf(/^context\/retrieval\/index(\.js)?$/).sort()).toEqual(["application/context.ts", "core/index.ts"]);
+      expect(importersOf(/^context\//).filter((f) => f.startsWith("skills/") || f.startsWith("gateway/") || f.startsWith("memory/") || f.startsWith("knowledge/"))).toEqual([]);
+    });
+
     it("the Markdown knowledge provider is imported by exactly one module: the knowledge skill", () => {
       expect(importersOf(/^knowledge\/markdown\/index(\.js)?$/)).toEqual(["skills/system/knowledge.ts"]);
     });
