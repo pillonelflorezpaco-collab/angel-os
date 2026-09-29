@@ -67,3 +67,24 @@ Topics (`LearningTopic`), self-reported study sessions, and recall cards with an
 - **Isolation.** Same as the rest of Life OS: store ownership checks + `life_owner_guard` / `life_immutable_guard` / `append_only_guard` triggers.
 - **Skill** `system.learning` (`LEARNING_READ`; TOPIC_CREATE/UPDATE/SET_STATUS, SESSION_LOG, CARD_CREATE/REVIEW/RETIRE — LOW; voice needs approval). Context gets `activeLearning` (`withheld: ["learning"]`).
 - Known limit: session minutes are unverifiable self-reports; they are shown as such ("self-reported") and never rewarded.
+
+# Jarvis orchestration (BUILD #16): the model proposes, the OS enforces
+
+```
+explicit identity → permission-aware context (data) → ModelProvider (UNTRUSTED)
+   → parseModelOutput (strict, capped, deduped) → skills/system/jarvis.proposeFromModel
+   → proposeAction: permission · interface policy · risk policy · approval · exact binding · audit → real Results
+```
+- **The model port is inert.** `ModelProvider.propose(input, signal)` receives `{userText, context, tools}` — no principal id, no identity, no handle to the
+  database, the gateway or approvals — and returns raw JSON that is never trusted. The context is the same permission-aware package as everywhere (data, not instructions).
+- **Proposals are exactly `{skillKey, action, parameters}`.** Any extra key (principalId, identity, approvalId, force, …) invalidates the proposal; at most 5 per turn,
+  deduplicated, size-capped. Only registered ActionDefinitions are proposable — reads, approvals, decisions and unknown names are ignored **and audited**
+  (`ACTION_REJECTED`, source `jarvis.orchestrator`, reason only — parameters are never copied to audit).
+- **Nothing is special-cased for a model.** A proposal goes through `proposeAction` like a human's: strict schema (no client principal), permission (denied → DENIED),
+  interface policy (voice → approval), SENSITIVE → pending approval that only the owner can decide. A prompt-injected memory can make an obedient model *propose*
+  a deletion; it cannot make it happen.
+- **Honest outcomes.** The user-visible lines (✓ / ⏳ / ✗) are written from real Results *before* the model's own words, which are labelled "Jarvis says:". The overall status
+  is derived from the Results, never from the model's claim. Model failure/timeout → a fixed safe message, nothing changed, audited.
+- **Opt-in.** Core uses `NullModelProvider` by default (behaviour unchanged). A provider is consulted only for input the deterministic router did not understand, and only with an identity.
+- **Not built (needs a human decision):** a concrete LLM adapter (API key, network egress, spend). The port, validation and enforcement are model-agnostic and tested with scripted models.
+- Model-initiated *reads* are not offered this build: the model gets the context package; extra retrieval would need its own read tool with the same READ-lane checks.

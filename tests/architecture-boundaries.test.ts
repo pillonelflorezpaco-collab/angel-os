@@ -9,7 +9,7 @@ import path from "node:path";
 // adapter/API/Core/application rules; these are the execution-path ones.)
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "life", "future", "learning", "db"];
+const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "life", "future", "learning", "orchestration", "db"];
 
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((n) => {
@@ -152,6 +152,25 @@ describe("execution-path architecture boundaries", () => {
         expect(runtimeImports(pure), f).toEqual([]);
         expect(/\b(fetch|readFile|writeFile|require|process\.|getDb|Date\.now|new Date\(\))/.test(pure), f).toBe(false);
       }
+    });
+
+    it("orchestration: the model port is inert (imports only core types); the orchestrator has no database, no skills/connectors/API access, and only Core imports it", () => {
+      const files = [...code.entries()].filter(([f]) => f.startsWith("orchestration/"));
+      expect(files.length).toBeGreaterThan(0);
+      for (const [f, src] of files) {
+        expect(/\bgetDb\b|@prisma\/client/.test(runtimeImports(src).join("\n")), `${f} touches the database`).toBe(false);
+        expect(runtimeImports(src).filter((s) => /(^|\/)(connectors|api|interfaces|db)(\/|$)/.test(s)), f).toEqual([]);
+      }
+      // a model provider (types.ts) can reach nothing: no gateway, identity, skills, context
+      expect(runtimeImports(code.get("orchestration/types.ts")!)).toEqual([]);
+      // the pure validator imports only zod
+      expect(runtimeImports(code.get("orchestration/proposals.ts")!)).toEqual(["zod"]);
+      // the orchestrator never reaches the READ lane or the approval decision path
+      const orch = code.get("orchestration/orchestrator.ts")!;
+      expect(/gatewayExecute|decideApproval|listPendingApprovals|getApproval/.test(orch.replace(/\/\/.*$/gm, ""))).toBe(false);
+      expect(importersOf(/^orchestration\/orchestrator(\.js)?$/).sort()).toEqual(["core/index.ts"]);
+      // model proposals enter the gateway ONLY through the jarvis skill
+      expect(importersOf(/^skills\/system\/jarvis(\.js)?$/).sort()).toEqual(["orchestration/orchestrator.ts"]);
     });
 
     it("the gateway contains no write allow-list", () => {

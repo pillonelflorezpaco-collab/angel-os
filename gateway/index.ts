@@ -173,4 +173,5 @@ export {
   type ApprovalView,
 } from "./approvals/index.js";
 export type { ActionDefinition, ExecutionContext } from "./actions/types.js";
+export { describeActions, hasAction, type ActionSpec } from "./actions/catalog.js";
 export { recordAuditEvent, listAuditLog } from "./audit/index.js";

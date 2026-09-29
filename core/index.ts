@@ -11,10 +11,19 @@ import { registerSkillActions } from "../skills/manifest.js";
 import type { IdentityContext } from "../identity/index.js";
 import { DeterministicContextEngine } from "../context/retrieval/index.js";
 import { formatContext } from "../context/format.js";
+import { orchestrate } from "../orchestration/orchestrator.js";
+import { NullModelProvider, type ModelProvider } from "../orchestration/types.js";
 import { toSafeError, logInternalError } from "./errors.js";
 import type { Result } from "./types/index.js";
 
 export { JARVIS_AGENT_KEY };
+
+// Optional model. None configured (the default) = fully deterministic behaviour. A model is only ever
+// consulted for input the deterministic router did not understand, and only PROPOSES (see orchestration/).
+let modelProvider: ModelProvider = new NullModelProvider();
+export function setModelProvider(provider: ModelProvider | null): void {
+  modelProvider = provider ?? new NullModelProvider();
+}
 registerSkillActions();
 
 export interface JarvisRequest {
@@ -119,6 +128,10 @@ export class JarvisCore {
       }
 
       case "unknown":
+        if (modelProvider.name !== "none" && request.identity) {
+          const context = await new DeterministicContextEngine().buildContext({ identity: request.identity, agentKey: JARVIS_AGENT_KEY, query: request.input });
+          return orchestrate(request.identity, request.input, { provider: modelProvider, context });
+        }
         return {
           status: "FAILED",
           message: `I didn't understand: "${request.input}". Try "remind me tomorrow at 10 to ...", "what are my tasks", or "remember that ...".`,
