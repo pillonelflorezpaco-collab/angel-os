@@ -16,6 +16,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["core", "memory", "knowledge", "context", "skills", "gateway", "connectors", "identity", "interfaces", "application", "activity", "reminders", "db", "api", "scripts", "tests"],
+  "include": ["core", "memory", "knowledge", "context", "skills", "gateway", "connectors", "identity", "interfaces", "application", "activity", "reminders", "db", "api", "life", "future", "learning", "orchestration", "guidehub", "scripts", "tests"],
   "exclude": ["node_modules", "dist"]
 }

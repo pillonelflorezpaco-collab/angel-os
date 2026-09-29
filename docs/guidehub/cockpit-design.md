@@ -1,6 +1,6 @@
 # GuideHub cockpit — design (v1, no code)
 
-Status: **design only.** No UI has been built. This document turns the finished Angel OS backend (API v2) into a product design, and records the
+Status: **step 1 is built** (see `README.md`: sign-in/session BFF, Today, Ask Jarvis, Approvals, three inline actions); steps 2–5 are still design only. This document turns the finished Angel OS backend (API v2) into a product design, and records the
 rules a UI must follow so it cannot undermine the guarantees the backend enforces. The UI is a **client of `docs/api/README.md`** — it adds no backend behaviour.
 
 ## 1. Principles (the cockpit's non-negotiables)

@@ -22,7 +22,9 @@
     "identity": "tsx scripts/identity.ts",
     "telegram": "tsx scripts/telegram.ts",
     "worker": "tsx scripts/worker.ts",
-    "ingest-markdown": "tsx scripts/ingest-markdown.ts"
+    "ingest-markdown": "tsx scripts/ingest-markdown.ts",
+    "guidehub": "tsx guidehub/server.ts",
+    "guidehub:password": "tsx scripts/guidehub-password.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

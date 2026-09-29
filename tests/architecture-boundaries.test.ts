@@ -9,7 +9,7 @@ import path from "node:path";
 // adapter/API/Core/application rules; these are the execution-path ones.)
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "life", "future", "learning", "orchestration", "db"];
+const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "life", "future", "learning", "orchestration", "guidehub", "db"];
 
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((n) => {
@@ -192,6 +192,17 @@ describe("execution-path architecture boundaries", () => {
     it("the legacy global Markdown knowledge base is gone: no provider module, no markdown files served from code", () => {
       expect([...code.keys()].filter((f) => f.startsWith("knowledge/markdown/"))).toEqual([]);
       expect([...code.entries()].filter(([, src]) => /MarkdownKnowledgeProvider|setKnowledgeProvider|KnowledgeProvider\b/.test(src)).map(([f]) => f)).toEqual([]);
+    });
+
+    it("the GuideHub cockpit is a pure HTTP client: it imports nothing from the backend (no db, gateway, identity, skills, core, …) and nothing imports it", () => {
+      const files = [...code.entries()].filter(([f]) => f.startsWith("guidehub/"));
+      expect(files.length).toBeGreaterThan(0);
+      for (const [f, src] of files) {
+        const bad = runtimeImports(src).filter((s) => !(s.startsWith("node:") || s === "express" || s.startsWith("./")));
+        expect(bad, f).toEqual([]);
+        expect(/@prisma|getDb|process\.env\.DATABASE_URL/.test(src), f).toBe(false);
+      }
+      expect([...code.entries()].filter(([f, src]) => !f.startsWith("guidehub/") && /from\s+["'](\.\.\/)+guidehub\//.test(src)).map(([f]) => f)).toEqual([]);
     });
 
     it("the gateway contains no write allow-list", () => {
