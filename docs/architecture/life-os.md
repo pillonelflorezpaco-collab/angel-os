@@ -22,3 +22,22 @@ Decision records, Results and Reviews are BUILD #13.
 - Deleting a person nulls task links and removes project links (tasks are kept).
 - Decisions still have no writer (BUILD #13).
 - Existing databases need `npm run db:seed` for the new permissions before startup verification passes.
+
+# Decision records, results and reviews (BUILD #13)
+
+- **Decision = history.** `DECISION_RECORD` (system.decisions, LOW) stores title, question, options (≥2, at most one chosen), decision, reasoning,
+  `expected` (a prediction), `reviewAt` and evidence. Content is immutable (DB trigger `decision_history_guard`); changing your mind records a NEW
+  decision that supersedes the old one (a decision can be superseded once; chains are same-principal).
+- **Evidence** references the owner's memory / knowledge item / task, or is a free NOTE. The snapshot `label` is copied from the OWNED row by the
+  server — never supplied by the client — so a record stays readable if the referenced row is later deleted. A reference is not an upgrade:
+  an INFERENCE memory used as evidence stays an INFERENCE.
+- **Look-back.** `DECISION_REVIEW` sets `outcome`/`lesson`/`reviewedAt` exactly once (atomic `where reviewedAt is null`, backed by a trigger).
+  `expected` is never rewritten, so prediction vs reality stays comparable. `DECISION_READ` lists decisions due for review.
+- **Results** (`RESULT_RECORD`, system.life): append-only owner statements about a goal / project / quest / decision, with an optional measurement
+  that needs both `value` and `unit`. Nothing is computed.
+- **Reviews** (`REVIEW_CREATE`): the owner's words plus a `facts` snapshot of plain counts computed server-side from the principal's own rows
+  (tasks completed, quests completed, goals achieved/abandoned, decisions recorded/reviewed, results recorded). Clients cannot supply facts.
+  Period ≤ ~3 months, immutable.
+- **DB integrity:** `polymorphic_owner_guard` (evidence/result subjects), `append_only_guard` (options, evidence, results, reviews),
+  a partial unique index for one chosen option, owner guards on supersession/options/evidence.
+- Known limit: Activity has a `DECISION` type only; results and reviews record none.

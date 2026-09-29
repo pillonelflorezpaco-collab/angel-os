@@ -140,6 +140,10 @@ async function main() {
     { resource: "angel:tasks", action: "TASK_UPDATE", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
     { resource: "angel:tasks", action: "TASK_COMPLETE", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
     { resource: "angel:tasks", action: "TASK_CANCEL", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
+    { resource: "angel:life", action: "RESULT_RECORD", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "REVIEW_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:decisions", action: "DECISION_RECORD", category: "WRITE", state: "ALLOWED", skillId: decisionsSkill.id },
+    { resource: "angel:decisions", action: "DECISION_REVIEW", category: "WRITE", state: "ALLOWED", skillId: decisionsSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",

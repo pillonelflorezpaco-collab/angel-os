@@ -43,6 +43,8 @@ model Principal {
   knowledgeRelations KnowledgeRelation[]
   visions            Vision[]
   quests             Quest[]
+  results            Result[]
+  reviews            Review[]
 
   @@map("principals")
 }
@@ -309,6 +311,17 @@ model Decision {
   supersedes   Decision? @relation("DecisionHistory", fields: [supersedesId], references: [id])
   supersededBy Decision? @relation("DecisionHistory")
   decidedAt    DateTime  @default(now())
+  question     String? // what was being decided
+  reasoning    String? // why this option
+  expected     String? // what the owner expects to happen (a prediction, judged later against `outcome`)
+  reviewAt     DateTime? // when the owner wants to look back
+  // The look-back. Set ONCE (with reviewedAt); everything above is immutable history.
+  outcome      String?
+  lesson       String?
+  reviewedAt   DateTime?
+
+  options  DecisionOption[]
+  evidence DecisionEvidence[]
 
   @@index([principalId])
   @@map("decisions")
@@ -891,4 +904,93 @@ model Activity {
   @@index([principalId, occurredAt(sort: Desc)])
   @@index([principalId, type])
   @@map("activities")
+}
+
+// ── Decision records, results, reviews (BUILD #13) ────────────────────────
+
+model DecisionOption {
+  id          String   @id @default(uuid())
+  principalId String
+  decisionId  String
+  decision    Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  label       String
+  pros        String?
+  cons        String?
+  chosen      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([decisionId])
+  @@index([principalId])
+  @@map("decision_options")
+}
+
+enum EvidenceKind {
+  MEMORY
+  KNOWLEDGE
+  TASK
+  NOTE
+}
+
+// What the decision was based on. A reference (checked to be the owner's) plus
+// a snapshot label, so the record stays readable if the referenced row is later
+// deleted. Kind is never upgraded: a MEMORY reference does not turn an
+// INFERENCE into a fact.
+model DecisionEvidence {
+  id          String       @id @default(uuid())
+  principalId String
+  decisionId  String
+  decision    Decision     @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  kind        EvidenceKind
+  refId       String?
+  label       String
+  createdAt   DateTime     @default(now())
+
+  @@index([decisionId])
+  @@index([principalId])
+  @@map("decision_evidence")
+}
+
+enum ResultSubject {
+  GOAL
+  PROJECT
+  QUEST
+  DECISION
+}
+
+// An owner-recorded outcome, append-only. `value`/`unit` are an optional measurement the
+// owner supplies; nothing is computed or inferred here.
+model Result {
+  id          String        @id @default(uuid())
+  principalId String
+  principal   Principal     @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  subjectKind ResultSubject
+  subjectId   String
+  statement   String
+  value       Float?
+  unit        String?
+  recordedAt  DateTime      @default(now())
+
+  @@index([principalId, recordedAt])
+  @@index([subjectKind, subjectId])
+  @@map("results")
+}
+
+// A periodic look-back. `facts` is a snapshot of plain counts taken from the database at
+// creation (never a judgement); `summary`/`wins`/`lessons`/`nextSteps` are the owner's words.
+// Immutable once created.
+model Review {
+  id          String    @id @default(uuid())
+  principalId String
+  principal   Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  periodStart DateTime
+  periodEnd   DateTime
+  summary     String
+  wins        String?
+  lessons     String?
+  nextSteps   String?
+  facts       Json
+  createdAt   DateTime  @default(now())
+
+  @@index([principalId, periodEnd])
+  @@map("reviews")
 }

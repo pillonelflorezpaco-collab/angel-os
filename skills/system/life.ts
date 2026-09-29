@@ -7,6 +7,7 @@ import type { Result } from "../../core/types/index.js";
 import { recordActivity } from "../../activity/service.js";
 import { JARVIS_AGENT_KEY } from "../agent.js";
 import * as life from "../../life/store.js";
+import * as decisions from "../../life/decisions.js";
 
 // Life OS structure: Vision → Goal → Project → Quest → Task, plus People and links.
 //
@@ -38,11 +39,11 @@ interface Spec<P> {
   activity?: (result: any) => Parameters<typeof recordActivity>[0] extends infer A ? Omit<A & object, "principalId"> : never;
 }
 
-function define<P>(s: Spec<P>): ActionDefinition<P> {
+export function define<P>(s: Spec<P>, target: { skillKey: string; resource: string } = { skillKey: SKILL_KEY, resource: RESOURCE }): ActionDefinition<P> {
   return {
-    skillKey: SKILL_KEY,
+    skillKey: target.skillKey,
     action: s.action,
-    resource: RESOURCE,
+    resource: target.resource,
     category: "WRITE",
     risk: s.risk ?? "LOW",
     agentKey: JARVIS_AGENT_KEY,
@@ -230,7 +231,24 @@ export const personDeleteDefinition = define({
   message: () => "Person deleted.",
 });
 
+// ── Results and reviews (append-only) ───────────────────────────────────────
+export const resultRecordDefinition = define({
+  action: "RESULT_RECORD",
+  schema: strict({ subjectKind: z.enum(["GOAL", "PROJECT", "QUEST", "DECISION"]), subjectId: id, statement: text, value: z.number().finite().optional(), unit: z.string().trim().min(1).max(40).optional() }),
+  describe: (p) => `Record a result for ${p.subjectKind.toLowerCase()} ${p.subjectId}`,
+  run: (pid, p) => decisions.recordResult(pid, p),
+  message: () => "Result recorded.",
+});
+export const reviewCreateDefinition = define({
+  action: "REVIEW_CREATE",
+  schema: strict({ periodStart: instant, periodEnd: instant, summary: text, wins: text.optional(), lessons: text.optional(), nextSteps: text.optional() }),
+  describe: (p) => `Record a review of ${p.periodStart} to ${p.periodEnd}`,
+  run: (pid, p) => decisions.createReview(pid, { ...p, periodStart: new Date(p.periodStart), periodEnd: new Date(p.periodEnd) }),
+  message: () => "Review recorded.",
+});
+
 export const LIFE_DEFINITIONS = [
+  resultRecordDefinition, reviewCreateDefinition,
   visionCreateDefinition, visionUpdateDefinition, visionArchiveDefinition,
   goalCreateDefinition, goalUpdateDefinition, goalAchieveDefinition, goalAbandonDefinition,
   projectCreateDefinition, projectUpdateDefinition, projectSetStatusDefinition,
@@ -264,3 +282,6 @@ function read<T>(identity: IdentityContext, agentKey: string, parameters: Record
 export const readLifeOverview = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "overview" }, life.lifeOverview);
 export const readProject = (identity: IdentityContext, input: { agentKey: string; projectId: string }) => read(identity, input.agentKey, { op: "project", projectId: input.projectId }, (pid) => life.getProject(pid, input.projectId));
 export const readPeople = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "people" }, life.listPeople);
+export const readResults = (identity: IdentityContext, input: { agentKey: string; subjectKind?: "GOAL" | "PROJECT" | "QUEST" | "DECISION"; subjectId?: string }) =>
+  read(identity, input.agentKey, { op: "results", subjectKind: input.subjectKind ?? null, subjectId: input.subjectId ?? null }, (pid) => decisions.listResults(pid, { subjectKind: input.subjectKind, subjectId: input.subjectId }));
+export const readReviews = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "reviews" }, decisions.listReviews);
