@@ -1,3 +1,4 @@
+import { withConnectionRefreshLock } from "../../connectors/service/refreshLock.js";
 import { getDb } from "../../db/client/index.js";
 import { gatewayExecute } from "../../gateway/index.js";
 import { recordAuditEvent } from "../../gateway/audit/index.js";
@@ -82,13 +83,12 @@ async function markConnectionError(connectionId: string, principalId: string, re
 }
 
 /**
- * NOTE (accepted debt, BUILD #8): token refresh below is an internal
- * credential-MAINTENANCE write (external POST + credential-store rewrite)
- * that happens during a calendar READ. It touches only this principal's own
- * connection secret and is not user-visible state, but it is a mutation
- * inside the READ lane and it has no lock (two concurrent reads can both
- * refresh). Moving it out needs a connection-maintenance action + lock and
- * is a follow-up, not part of this build.
+ * NOTE (accepted debt): token refresh below is an internal credential-MAINTENANCE
+ * write (external POST + credential-store rewrite) that happens during a calendar
+ * READ. It touches only this principal's own connection secret and is not
+ * user-visible state, but it is still a mutation inside the READ lane. It is now
+ * single-flight (connectors/service/refreshLock.ts): concurrent reads share ONE
+ * refresh call. Moving it out into a connection-maintenance action stays a follow-up.
  *
  * Resolves a usable access token for this principal's Google connection,
  * refreshing it first if it's expired (or about to be). `oauthClientOverride`
@@ -113,41 +113,48 @@ export async function resolveCredential(
   }
 
   const stored = JSON.parse(raw) as StoredCredential;
-  const expiresAt = new Date(stored.expiresAt);
-  const needsRefresh = expiresAt.getTime() - Date.now() < 60_000; // refresh 60s before expiry
-
-  if (!needsRefresh) {
-    return {
-      connectionId: connection.id,
-      credential: { accessToken: stored.accessToken, refreshToken: stored.refreshToken, expiresAt },
-    };
-  }
-
-  if (!stored.refreshToken) {
-    await markConnectionError(connection.id, principalId, "access token expired, no refresh token available");
-    throw new CredentialExpiredError();
-  }
-
-  const oauthClient = oauthClientOverride ?? new GoogleOAuthClient(loadGoogleOAuthConfig());
-  let refreshed;
-  try {
-    refreshed = await oauthClient.refreshAccessToken(stored.refreshToken);
-  } catch {
-    await markConnectionError(connection.id, principalId, "refresh_token rejected by Google (likely revoked)");
-    throw new CredentialExpiredError();
-  }
-
-  const next: StoredCredential = {
-    accessToken: refreshed.accessToken,
-    refreshToken: refreshed.refreshToken ?? stored.refreshToken,
-    expiresAt: refreshed.expiresAt.toISOString(),
-  };
-  await store.setSecret(connection.credentialRef, JSON.stringify(next));
-
-  return {
+  const isFresh = (c: StoredCredential) => new Date(c.expiresAt).getTime() - Date.now() >= 60_000; // refresh 60s before expiry
+  const use = (c: StoredCredential, expiresAt = new Date(c.expiresAt)) => ({
     connectionId: connection.id,
-    credential: { accessToken: next.accessToken, refreshToken: next.refreshToken, expiresAt: refreshed.expiresAt },
-  };
+    credential: { accessToken: c.accessToken, refreshToken: c.refreshToken, expiresAt },
+  });
+
+  if (isFresh(stored)) return use(stored);
+
+  // Single-flight: only one caller refreshes; the others wait and then reuse the refreshed credential.
+  const credentialRef = connection.credentialRef;
+  return withConnectionRefreshLock(connection.id, async () => {
+    // Re-read after acquiring the lock — another caller (or process) may have refreshed while we waited.
+    let current = stored;
+    try {
+      current = JSON.parse(await store.getSecret(credentialRef)) as StoredCredential;
+    } catch {
+      throw new CredentialMissingError();
+    }
+    if (isFresh(current)) return use(current);
+
+    if (!current.refreshToken) {
+      await markConnectionError(connection.id, principalId, "access token expired, no refresh token available");
+      throw new CredentialExpiredError();
+    }
+
+    const oauthClient = oauthClientOverride ?? new GoogleOAuthClient(loadGoogleOAuthConfig());
+    let refreshed;
+    try {
+      refreshed = await oauthClient.refreshAccessToken(current.refreshToken);
+    } catch {
+      await markConnectionError(connection.id, principalId, "refresh_token rejected by Google (likely revoked)");
+      throw new CredentialExpiredError();
+    }
+
+    const next: StoredCredential = {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken ?? current.refreshToken,
+      expiresAt: refreshed.expiresAt.toISOString(),
+    };
+    await store.setSecret(credentialRef, JSON.stringify(next));
+    return use(next, refreshed.expiresAt);
+  });
 }
 
 function getGoogleCalendarConnector(): CalendarConnector {

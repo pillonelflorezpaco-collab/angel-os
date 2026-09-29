@@ -88,3 +88,14 @@ explicit identity → permission-aware context (data) → ModelProvider (UNTRUST
 - **Opt-in.** Core uses `NullModelProvider` by default (behaviour unchanged). A provider is consulted only for input the deterministic router did not understand, and only with an identity.
 - **Not built (needs a human decision):** a concrete LLM adapter (API key, network egress, spend). The port, validation and enforcement are model-agnostic and tested with scripted models.
 - Model-initiated *reads* are not offered this build: the model gets the context package; extra retrieval would need its own read tool with the same READ-lane checks.
+
+# Connectors and automation (Phase H — assessed, one defect fixed)
+
+**Assessment.** No backend feature needs a generic automation/connector framework: the only automation is the reminder worker (atomic claim, lease, fence, DeliveryPort — already sound),
+and the only connector is read-only Google Calendar behind the credential store, the connection service and the READ lane. Building a rules/automation engine now would add attack
+surface with no consumer, so it is deliberately **not** built. New connectors/automations stay a future decision, and would each need their own ActionDefinitions, permissions and approval policy.
+
+**Fixed (BUILD #17): concurrent token refresh.** Two calendar reads that both saw an expired token used to both call the provider's refresh endpoint; with rotating refresh tokens the second
+call is rejected and the connection was wrongly marked ERROR. Refresh is now single-flight per connection (`connectors/service/refreshLock.ts`): an in-process shared promise plus a
+transaction-scoped Postgres advisory lock (auto-released on commit/rollback/disconnect), and the caller re-reads the credential after acquiring the lock so a refresh done elsewhere is reused.
+Failure is reported to every waiting caller, the connection is marked ERROR once, and the lock is never left held. Still accepted debt: the refresh remains a maintenance write inside the READ lane.
