@@ -20,6 +20,7 @@ import { registerSkillActions, verifyProductionActions } from "../skills/manifes
 import { registerGoogleConnector } from "../connectors/google/index.js";
 import { startGoogleAuthorization, completeGoogleAuthorization } from "../connectors/google/authorization.js";
 import { BearerTokenAuthenticator, getPrincipalProfile, type Authenticator } from "../identity/index.js";
+import { lifeRouter } from "./lifeRoutes.js";
 import { asyncRoute, authenticate, cors, errorHandler, identityOf, parseCorsOrigins, rejectPrincipalOverride } from "./middleware.js";
 
 // The HTTP interface. It is an ADAPTER: it authenticates the caller into an
@@ -352,6 +353,8 @@ export function createApp(options: AppOptions = {}) {
       }
     })
   );
+
+  api.use(lifeRouter());
 
   api.use((_req, res) => {
     res.status(404).json({ error: "Not found." });

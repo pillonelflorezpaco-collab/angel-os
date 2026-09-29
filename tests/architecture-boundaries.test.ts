@@ -173,6 +173,13 @@ describe("execution-path architecture boundaries", () => {
       expect(importersOf(/^skills\/system\/jarvis(\.js)?$/).sort()).toEqual(["orchestration/orchestrator.ts"]);
     });
 
+    it("the life/decisions/future/learning HTTP routes are an adapter: no gateway, database or connector imports; acting by name goes only through the apiActions skill", () => {
+      const src = code.get("api/lifeRoutes.ts")!;
+      expect(runtimeImports(src).filter((s) => /(^|\/)(gateway|db|connectors|identity|memory|knowledge|life|future|learning)(\/|$)/.test(s))).toEqual([]);
+      expect(/\bgetDb\b|@prisma\/client/.test(src)).toBe(false);
+      expect(importersOf(/^skills\/system\/apiActions(\.js)?$/)).toEqual(["api/lifeRoutes.ts"]);
+    });
+
     it("the gateway contains no write allow-list", () => {
       expect(/ALLOWLIST|isLegacyWriteAllowed/i.test(code.get("gateway/index.ts")!)).toBe(false);
     });
