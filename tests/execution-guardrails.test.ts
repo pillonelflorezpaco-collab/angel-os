@@ -122,7 +122,32 @@ describe("gatewayExecute guardrail (legacy path is READ-only)", () => {
       "system.memory|MEMORY_UPDATE",
       "system.tasks|CREATE_REMINDER",
       "system.tasks|CREATE_TASK",
-    ]);
+      "system.life|GOAL_ABANDON",
+      "system.life|GOAL_ACHIEVE",
+      "system.life|GOAL_CREATE",
+      "system.life|GOAL_UPDATE",
+      "system.life|PERSON_CREATE",
+      "system.life|PERSON_DELETE",
+      "system.life|PERSON_UPDATE",
+      "system.life|PROJECT_CREATE",
+      "system.life|PROJECT_LINK_KNOWLEDGE",
+      "system.life|PROJECT_LINK_PERSON",
+      "system.life|PROJECT_SET_STATUS",
+      "system.life|PROJECT_UNLINK_KNOWLEDGE",
+      "system.life|PROJECT_UNLINK_PERSON",
+      "system.life|PROJECT_UPDATE",
+      "system.life|QUEST_ABANDON",
+      "system.life|QUEST_COMPLETE",
+      "system.life|QUEST_CREATE",
+      "system.life|QUEST_START",
+      "system.life|QUEST_UPDATE",
+      "system.life|VISION_ARCHIVE",
+      "system.life|VISION_CREATE",
+      "system.life|VISION_UPDATE",
+      "system.tasks|TASK_CANCEL",
+      "system.tasks|TASK_COMPLETE",
+      "system.tasks|TASK_UPDATE",
+    ].sort());
   });
 
   describe("audit truthfulness", () => {

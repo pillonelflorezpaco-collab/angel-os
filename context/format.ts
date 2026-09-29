@@ -23,6 +23,14 @@ export function formatContext(ctx: ContextPackage): string {
     lines.push("Decisions:");
     for (const d of ctx.relevantDecisions) lines.push(`• ${d.title}: ${d.decision}`);
   }
+  if (ctx.activeGoals?.length) {
+    lines.push("Goals:");
+    for (const g of ctx.activeGoals) lines.push(`• ${g.title}`);
+  }
+  if (ctx.activeProjects?.length) {
+    lines.push("Projects:");
+    for (const p of ctx.activeProjects) lines.push(`• ${p.name} [${p.status.toLowerCase()}, ${p.tasks.open} open / ${p.tasks.done} done]`);
+  }
   if (ctx.currentTasks.length) {
     lines.push("Open tasks:");
     for (const t of ctx.currentTasks) lines.push(`• ${t.title} [${t.status.toLowerCase().replace("_", " ")}]`);

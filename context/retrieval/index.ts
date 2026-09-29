@@ -2,6 +2,7 @@ import { listTasks } from "../../skills/system/tasks.js";
 import { search as searchMemory, describeMemory } from "../../skills/system/memory.js";
 import { searchKnowledge, searchKnowledgeItems } from "../../skills/system/knowledge.js";
 import { queryDecisions } from "../../skills/system/decisions.js";
+import { readLifeOverview } from "../../skills/system/life.js";
 import { listActivity } from "../../skills/system/activity.js";
 import type { KnowledgeHit } from "../../knowledge/store/index.js";
 import { assertExplicitIdentity, runWithIdentity } from "../../identity/index.js";
@@ -12,7 +13,7 @@ import type { MemoryRecord } from "../../memory/types/index.js";
 import { queryTerms, rankByTermOverlap } from "../terms.js";
 
 /** Size caps (item counts and characters). Deliberately simple limits, not model-token budgeting. */
-export const CONTEXT_LIMITS = { tasks: 10, memories: 8, knowledge: 8, decisions: 5, activity: 5, itemChars: 500, termResults: 5 } as const;
+export const CONTEXT_LIMITS = { tasks: 10, memories: 8, knowledge: 8, decisions: 5, activity: 5, goals: 5, projects: 8, itemChars: 500, termResults: 5 } as const;
 
 const clip = (s: string): string => (s.length > CONTEXT_LIMITS.itemChars ? `${s.slice(0, CONTEXT_LIMITS.itemChars)}…` : s);
 
@@ -53,13 +54,14 @@ export class DeterministicContextEngine implements ContextEngine {
 
     const perTerm = <T>(fn: (term: string) => Promise<Result>): Promise<Result[]> => Promise.all(searchTerms.map((t) => fn(t)));
 
-    const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult] = await Promise.all([
+    const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult, lifeResult] = await Promise.all([
       listTasks({ principalId, agentKey }),
       perTerm((term) => searchMemory({ principalId, agentKey, query: { query: term, limit: L.termResults, asOf } })),
       perTerm((term) => searchKnowledgeItems(identity, { agentKey, query: term, limit: L.termResults })),
       perTerm((term) => searchKnowledge(identity, { agentKey, query: term, limit: 2 })),
       terms.length ? Promise.all(terms.map((topic) => queryDecisions({ principalId, agentKey, topic }))) : Promise.resolve([] as Result[]),
       listActivity({ principalId, agentKey, range: "week", limit: L.activity }),
+      readLifeOverview(identity, { agentKey }),
     ]);
 
     const withheld: string[] = [];
@@ -122,6 +124,20 @@ export class DeterministicContextEngine implements ContextEngine {
       relevantDecisions = rankByTermOverlap(rows, L.decisions).map((d) => ({ id: d.id, title: clip(d.title), decision: clip(d.decision), decidedAt: d.decidedAt.toISOString() }));
     }
 
+    // ── Life structure: active goals and projects, ranked by query-term overlap, never scored ──
+    let activeGoals: NonNullable<ContextPackage["activeGoals"]> = [];
+    let activeProjects: NonNullable<ContextPackage["activeProjects"]> = [];
+    if (settle("life", [lifeResult])) {
+      const life = lifeResult.data as {
+        goals: { id: string; title: string; horizon: string; targetDate: Date | null }[];
+        projects: { id: string; name: string; status: string; goalId: string | null; tasks: { open: number; done: number } }[];
+      };
+      const hits = (text: string) => terms.filter((t) => text.toLowerCase().includes(t)).length;
+      const best = <T>(rows: T[], text: (r: T) => string, n: number) => [...rows].sort((a, b) => hits(text(b)) - hits(text(a))).slice(0, n);
+      activeGoals = best(life.goals, (g) => g.title, L.goals).map((g) => ({ id: g.id, title: clip(g.title), horizon: g.horizon, targetDate: g.targetDate ? g.targetDate.toISOString() : null }));
+      activeProjects = best(life.projects, (p) => p.name, L.projects).map((p) => ({ id: p.id, name: clip(p.name), status: p.status, goalId: p.goalId, tasks: { open: p.tasks.open, done: p.tasks.done } }));
+    }
+
     // ── History (Activity): summaries only ──
     let recentActivity: NonNullable<ContextPackage["recentActivity"]> = [];
     if (settle("history", [activityResult])) {
@@ -133,6 +149,8 @@ export class DeterministicContextEngine implements ContextEngine {
       relevantMemories,
       relevantKnowledge,
       relevantDecisions,
+      activeGoals,
+      activeProjects,
       recentActivity,
       withheld,
       unavailable,

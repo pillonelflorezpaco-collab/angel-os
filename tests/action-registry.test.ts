@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { registerAction, unregisterAction, getActionDefinition, validateDefinition, IncompleteActionDefinitionError } from "../gateway/actions/registry.js";
 import { verifyRegisteredActions } from "../gateway/actions/verify.js";
-import { registerSkillActions, verifyProductionActions, PRODUCTION_ACTIONS } from "../skills/manifest.js";
+import { registerSkillActions, PRODUCTION_DEFINITIONS, verifyProductionActions, PRODUCTION_ACTIONS } from "../skills/manifest.js";
 import type { ActionDefinition } from "../gateway/actions/types.js";
 import { ensureAgent, ensureSkill, createPrincipal, deletePrincipal, grant } from "./helpers/fixtures.js";
 
@@ -127,12 +127,7 @@ describe("action registry: incomplete definitions can never register", () => {
       registerSkillActions();
       const p = (await createPrincipal("Registry Prod")).id;
       try {
-        for (const [skill, action, resource] of [
-          ["system.tasks", "CREATE_TASK", "angel:tasks"], ["system.tasks", "CREATE_REMINDER", "angel:tasks"],
-          ["system.memory", "MEMORY_CREATE", "angel:memory"], ["system.memory", "MEMORY_UPDATE", "angel:memory"],
-          ["system.memory", "MEMORY_CONFIRM", "angel:memory"], ["system.memory", "MEMORY_DELETE", "angel:memory"], ["system.memory", "MEMORY_RETRACT", "angel:memory"],
-          ["system.knowledge", "KNOWLEDGE_INGEST", "angel:knowledge"], ["system.knowledge", "KNOWLEDGE_ADD", "angel:knowledge"], ["system.knowledge", "KNOWLEDGE_RELATE", "angel:knowledge"], ["system.knowledge", "KNOWLEDGE_RETRACT", "angel:knowledge"], ["system.knowledge", "KNOWLEDGE_DELETE_SOURCE", "angel:knowledge"],
-        ]) await grant(p, "jarvis-core", skill, resource, action, "WRITE");
+        for (const d of PRODUCTION_DEFINITIONS) await grant(p, "jarvis-core", d.skillKey, d.resource, d.action, d.category);
         await expect(verifyProductionActions(p)).resolves.toBeUndefined();
       } finally { await deletePrincipal(p); }
     });

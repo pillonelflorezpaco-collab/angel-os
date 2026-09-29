@@ -53,6 +53,12 @@ async function main() {
     create: { key: "system.knowledge", name: "System Knowledge", description: "Read the curated Markdown knowledge base (READ only, gateway-mediated)." },
   });
 
+  const lifeSkill = await db.skill.upsert({
+    where: { key: "system.life" },
+    update: {},
+    create: { key: "system.life", name: "System Life", description: "Vision, goals, projects, quests, people and their links." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -108,6 +114,32 @@ async function main() {
     { resource: "angel:knowledge", action: "KNOWLEDGE_RELATE", category: "WRITE", state: "ALLOWED", skillId: knowledgeSkill.id },
     { resource: "angel:knowledge", action: "KNOWLEDGE_RETRACT", category: "WRITE", state: "ALLOWED", skillId: knowledgeSkill.id },
     { resource: "angel:knowledge", action: "KNOWLEDGE_DELETE_SOURCE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: knowledgeSkill.id },
+    { resource: "angel:life", action: "LIFE_READ", category: "READ", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "VISION_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "VISION_UPDATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "VISION_ARCHIVE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "GOAL_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "GOAL_UPDATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "GOAL_ACHIEVE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "GOAL_ABANDON", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_UPDATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_SET_STATUS", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_LINK_PERSON", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_UNLINK_PERSON", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_LINK_KNOWLEDGE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PROJECT_UNLINK_KNOWLEDGE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "QUEST_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "QUEST_UPDATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "QUEST_START", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "QUEST_COMPLETE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "QUEST_ABANDON", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PERSON_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PERSON_UPDATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
+    { resource: "angel:life", action: "PERSON_DELETE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: lifeSkill.id },
+    { resource: "angel:tasks", action: "TASK_UPDATE", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
+    { resource: "angel:tasks", action: "TASK_COMPLETE", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
+    { resource: "angel:tasks", action: "TASK_CANCEL", category: "WRITE", state: "ALLOWED", skillId: tasksSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",

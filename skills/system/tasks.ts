@@ -3,6 +3,8 @@ import { gatewayExecute, proposeAction } from "../../gateway/index.js";
 import type { ActionDefinition } from "../../gateway/index.js";
 import { z } from "zod";
 import { PublicError } from "../../core/errors.js";
+import { assertTaskLinks, closeTask, updateTask } from "../../life/store.js";
+import { recordActivity } from "../../activity/service.js";
 import type { IdentityContext } from "../../identity/index.js";
 import { JARVIS_AGENT_KEY } from "../agent.js";
 import type { Result } from "../../core/types/index.js";
@@ -17,6 +19,9 @@ export interface CreateTaskInput {
   title: string;
   description?: string;
   dueAt?: Date;
+  projectId?: string;
+  questId?: string;
+  relatedPersonId?: string;
 }
 
 const taskParams = z
@@ -24,6 +29,10 @@ const taskParams = z
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000).optional(),
     dueAt: z.string().datetime().optional(),
+    // Optional structure links; ownership is verified in execute (and again by the database).
+    projectId: z.string().uuid().optional(),
+    questId: z.string().uuid().optional(),
+    relatedPersonId: z.string().uuid().optional(),
   })
   .strict();
 type TaskParams = z.infer<typeof taskParams>;
@@ -44,8 +53,17 @@ export const createTaskDefinition: ActionDefinition<TaskParams> = {
   schema: taskParams,
   describe: (p) => `Add task: ${p.title}`,
   async execute(ctx, p) {
+    await assertTaskLinks(ctx.principalId, p);
     return getDb().task.create({
-      data: { principalId: ctx.principalId, title: p.title, description: p.description, dueAt: p.dueAt ? new Date(p.dueAt) : undefined },
+      data: {
+        principalId: ctx.principalId,
+        title: p.title,
+        description: p.description,
+        dueAt: p.dueAt ? new Date(p.dueAt) : undefined,
+        projectId: p.projectId,
+        questId: p.questId,
+        relatedPersonId: p.relatedPersonId,
+      },
     });
   },
   successMessage: (task, p) => `Task added: ${p.title}`,
@@ -59,8 +77,79 @@ export function createTask(identity: IdentityContext, input: CreateTaskInput): P
       title: input.title,
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.dueAt ? { dueAt: input.dueAt.toISOString() } : {}),
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      ...(input.questId ? { questId: input.questId } : {}),
+      ...(input.relatedPersonId ? { relatedPersonId: input.relatedPersonId } : {}),
     },
   });
+}
+
+const taskId = z.string().uuid();
+const nullableDate = z.string().datetime().nullable().optional();
+
+const taskUpdateParams = z
+  .object({
+    taskId,
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    dueAt: nullableDate,
+    status: z.enum(["TODO", "IN_PROGRESS"]).optional(),
+    projectId: z.string().uuid().nullable().optional(),
+    questId: z.string().uuid().nullable().optional(),
+    relatedPersonId: z.string().uuid().nullable().optional(),
+  })
+  .strict()
+  .refine((p) => Object.keys(p).some((k) => k !== "taskId"), { message: "nothing to update" });
+
+export const taskUpdateDefinition: ActionDefinition<z.infer<typeof taskUpdateParams>> = {
+  skillKey: SKILL_KEY,
+  action: "TASK_UPDATE",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "LOW",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: taskUpdateParams,
+  describe: (p) => `Update task ${p.taskId}`,
+  execute: (ctx, { taskId: id, dueAt, ...d }) =>
+    updateTask(ctx.principalId, id, { ...d, dueAt: dueAt === undefined ? undefined : dueAt === null ? null : new Date(dueAt) }),
+  successMessage: () => "Task updated.",
+};
+
+const taskCloseParams = z.object({ taskId }).strict();
+
+/** Completing is the owner's claim, never inferred; DONE and CANCELLED are terminal (a new task is created instead of reopening). */
+export const taskCompleteDefinition: ActionDefinition<z.infer<typeof taskCloseParams>> = {
+  skillKey: SKILL_KEY,
+  action: "TASK_COMPLETE",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "LOW",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: taskCloseParams,
+  describe: (p) => `Mark task ${p.taskId} done`,
+  async execute(ctx, p) {
+    const task = await closeTask(ctx.principalId, p.taskId, "DONE");
+    await recordActivity({ principalId: ctx.principalId, type: "TASK_COMPLETED", summary: "Completed a task", refType: "task", refId: task.id });
+    return task;
+  },
+  successMessage: () => "Task marked done.",
+};
+
+export const taskCancelDefinition: ActionDefinition<z.infer<typeof taskCloseParams>> = {
+  skillKey: SKILL_KEY,
+  action: "TASK_CANCEL",
+  resource: RESOURCE,
+  category: "WRITE",
+  risk: "LOW",
+  agentKey: JARVIS_AGENT_KEY,
+  schema: taskCloseParams,
+  describe: (p) => `Cancel task ${p.taskId}`,
+  execute: (ctx, p) => closeTask(ctx.principalId, p.taskId, "CANCELLED"),
+  successMessage: () => "Task cancelled.",
+};
+
+export function proposeTaskAction(identity: IdentityContext, action: "TASK_UPDATE" | "TASK_COMPLETE" | "TASK_CANCEL", parameters: unknown): Promise<Result> {
+  return proposeAction(identity, { skillKey: SKILL_KEY, action, parameters });
 }
 
 export interface ListTasksInput {

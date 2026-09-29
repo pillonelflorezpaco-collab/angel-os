@@ -41,6 +41,8 @@ model Principal {
   knowledgeSources   KnowledgeSource[]
   knowledgeItems     KnowledgeItem[]
   knowledgeRelations KnowledgeRelation[]
+  visions            Vision[]
+  quests             Quest[]
 
   @@map("principals")
 }
@@ -58,7 +60,8 @@ model Person {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  tasks Task[]
+  tasks    Task[]
+  projects ProjectPerson[]
 
   @@index([principalId])
   @@map("people")
@@ -80,9 +83,16 @@ model Project {
   status      ProjectStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  goalId      String?
+  goal        Goal?         @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  targetDate  DateTime?
+  completedAt DateTime?
 
   tasks     Task[]
   decisions Decision[]
+  quests    Quest[]
+  people    ProjectPerson[]
+  knowledge ProjectKnowledge[]
 
   @@index([principalId])
   @@map("projects")
@@ -109,11 +119,15 @@ model Task {
   dueAt           DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
+  questId         String?
+  quest           Quest?     @relation(fields: [questId], references: [id], onDelete: SetNull)
+  completedAt     DateTime? // set when DONE
 
   reminders Reminder[]
 
   @@index([principalId])
   @@index([projectId])
+  @@index([questId])
   @@map("tasks")
 }
 
@@ -155,6 +169,95 @@ model Reminder {
   @@map("reminders")
 }
 
+// ── Life OS (Build #12) ────────────────────────────────────────────────────
+//   VISION → GOAL → PROJECT → QUEST → ACTION (task)
+// Every link is between rows of the SAME principal: enforced by database
+// triggers (life_owner_guard), not just by the application. Terminal
+// statuses (achieved, abandoned, completed, cancelled, archived) never reopen.
+
+enum VisionStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Vision {
+  id          String       @id @default(uuid())
+  principalId String
+  principal   Principal    @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title       String
+  statement   String // the long-term direction, in Angel's own words
+  status      VisionStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  goals Goal[]
+
+  @@index([principalId])
+  @@map("visions")
+}
+
+enum QuestStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+// A bounded challenge inside a project with EXPLICIT completion criteria.
+// Completing a quest is a statement by Angel that the criteria were met — the
+// system never marks one complete on its own.
+model Quest {
+  id          String      @id @default(uuid())
+  principalId String
+  principal   Principal   @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  objective   String
+  criteria    String // what "done" means
+  status      QuestStatus @default(PLANNED)
+  dueAt       DateTime?
+  startedAt   DateTime?
+  closedAt    DateTime?
+  closedNote  String? // completion note or abandonment reason
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tasks Task[]
+
+  @@index([principalId, status])
+  @@index([projectId])
+  @@map("quests")
+}
+
+model ProjectPerson {
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  personId    String
+  person      Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  principalId String
+  role        String?
+  createdAt   DateTime @default(now())
+
+  @@id([projectId, personId])
+  @@index([principalId])
+  @@map("project_people")
+}
+
+model ProjectKnowledge {
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        KnowledgeItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  principalId String
+  note        String?
+  createdAt   DateTime      @default(now())
+
+  @@id([projectId, itemId])
+  @@index([principalId])
+  @@map("project_knowledge")
+}
+
 enum GoalStatus {
   ACTIVE
   ACHIEVED
@@ -177,8 +280,16 @@ model Goal {
   horizon     GoalHorizon @default(MEDIUM)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  visionId    String?
+  vision      Vision?     @relation(fields: [visionId], references: [id], onDelete: SetNull)
+  targetDate  DateTime?
+  closedAt    DateTime? // set when ACHIEVED or ABANDONED
+  closedNote  String? // achievement note or abandonment reason
+
+  projects Project[]
 
   @@index([principalId])
+  @@index([visionId])
   @@map("goals")
 }
 
@@ -380,24 +491,25 @@ model KnowledgeSource {
 }
 
 model KnowledgeItem {
-  id              String              @id @default(uuid())
-  principalId     String
-  principal       Principal           @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  kind            KnowledgeKind
-  title           String
-  body            String
-  origin          KnowledgeOrigin
-  sourceId        String?
-  source          KnowledgeSource?    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  confidence      Float? // meaningful for HYPOTHESIS / INSIGHT / FACT claims; null = not assessed
-  eventAt         DateTime? // EVENT / DATE items
-  status          KnowledgeStatus     @default(ACTIVE)
-  retractedAt     DateTime?
-  retractedReason String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  from            KnowledgeRelation[] @relation("RelationFrom")
-  to              KnowledgeRelation[] @relation("RelationTo")
+  id               String              @id @default(uuid())
+  principalId      String
+  principal        Principal           @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  kind             KnowledgeKind
+  title            String
+  body             String
+  origin           KnowledgeOrigin
+  sourceId         String?
+  source           KnowledgeSource?    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  confidence       Float? // meaningful for HYPOTHESIS / INSIGHT / FACT claims; null = not assessed
+  eventAt          DateTime? // EVENT / DATE items
+  status           KnowledgeStatus     @default(ACTIVE)
+  retractedAt      DateTime?
+  retractedReason  String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  from             KnowledgeRelation[] @relation("RelationFrom")
+  to               KnowledgeRelation[] @relation("RelationTo")
+  ProjectKnowledge ProjectKnowledge[]
 
   @@index([principalId, kind])
   @@index([principalId, status])

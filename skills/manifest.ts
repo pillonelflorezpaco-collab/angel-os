@@ -1,7 +1,8 @@
 import { registerAction } from "../gateway/actions/registry.js";
-import { createReminderDefinition, createTaskDefinition } from "./system/tasks.js";
+import { createReminderDefinition, createTaskDefinition, taskUpdateDefinition, taskCompleteDefinition, taskCancelDefinition } from "./system/tasks.js";
 import { rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition } from "./system/memory.js";
 import { knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition } from "./system/knowledge.js";
+import { LIFE_DEFINITIONS } from "./system/life.js";
 import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gateway/actions/verify.js";
 
 // The production action registry. Every ActionDefinition a running process
@@ -10,7 +11,7 @@ import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gat
 // registerSkillActions() once at start-up (api/server.ts, scripts/telegram.ts,
 // scripts/worker.ts, and Jarvis Core). It is idempotent.
 
-const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition, knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition] as const;
+const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition, knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition, taskUpdateDefinition, taskCompleteDefinition, taskCancelDefinition, ...LIFE_DEFINITIONS] as const;
 
 let registered = false;
 
@@ -25,6 +26,9 @@ export function registerSkillActions(): void {
   for (const def of DEFINITIONS) registerAction(def as never);
   registered = true;
 }
+
+/** Every production write action with its permission shape, so tests and seeds derive from ONE list. */
+export const PRODUCTION_DEFINITIONS = DEFINITIONS.map((d) => ({ skillKey: d.skillKey, action: d.action, resource: d.resource, category: d.category, risk: d.risk }));
 
 export const PRODUCTION_ACTIONS = DEFINITIONS.map((d) => `${d.skillKey}|${d.action}`);
 

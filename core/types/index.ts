@@ -44,6 +44,9 @@ export interface ContextPackage {
   /** Curated documents (slug) and structured knowledge items (`item:<id>`, with kind and contradiction flag). */
   relevantKnowledge: { slug: string; title: string; excerpt: string; kind?: string; contradicted?: boolean; confidence?: number | null }[];
   relevantDecisions?: { id: string; title: string; decision: string; decidedAt: string }[];
+  /** Active goals and projects (structure only; status is the owner's claim, task counts are plain counts). */
+  activeGoals?: { id: string; title: string; horizon: string; targetDate?: string | null }[];
+  activeProjects?: { id: string; name: string; status: string; goalId?: string | null; tasks: { open: number; done: number } }[];
   /** Recent life history (Activity), newest first. Summaries only. */
   recentActivity?: { type: string; summary: string; occurredAt: string }[];
   /** Sections the requesting agent is NOT permitted to read. Their data was never fetched. */
