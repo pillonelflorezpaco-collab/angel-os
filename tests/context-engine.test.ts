@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { vi, describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { getApiTokenService } from "../identity/index.js";
@@ -9,7 +9,8 @@ import { queryTerms, rankByTermOverlap, MAX_TERMS } from "../context/terms.js";
 import { formatContext } from "../context/format.js";
 import { handleInterfaceMessage } from "../application/dispatcher.js";
 import { remember, retractMemory } from "../skills/system/memory.js";
-import { addKnowledge, relateKnowledge, setKnowledgeProvider } from "../skills/system/knowledge.js";
+import { addKnowledge, relateKnowledge } from "../skills/system/knowledge.js";
+import { getKnowledgeStore } from "../knowledge/store/index.js";
 import { decideApproval } from "../gateway/index.js";
 import { createTask } from "../skills/system/tasks.js";
 import { createPrincipal, deletePrincipal, grant } from "./helpers/fixtures.js";
@@ -68,7 +69,7 @@ describe("context engine: retrieval, semantics, permissions", () => {
     await grant(a, JARVIS_AGENT_KEY, "system.memory", "angel:memory", "MEMORY_CREATE", "WRITE");
     await grant(a, JARVIS_AGENT_KEY, "system.memory", "angel:memory", "MEMORY_RETRACT", "WRITE", "APPROVAL_REQUIRED");
   });
-  afterAll(async () => { setKnowledgeProvider(null); await deletePrincipal(a); await deletePrincipal(b); await disconnectDb(); });
+  afterAll(async () => { vi.restoreAllMocks(); await deletePrincipal(a); await deletePrincipal(b); await disconnectDb(); });
 
   describe("retrieval", () => {
     it("a natural-language question finds memories by content terms and ranks multi-term matches first", async () => {
@@ -164,7 +165,7 @@ describe("context engine: retrieval, semantics, permissions", () => {
     });
 
     it("a permitted source that fails is `unavailable` (distinct from withheld), and the rest of the context is still returned", async () => {
-      setKnowledgeProvider({ listDocuments: async () => [], readDocument: async () => null, search: async () => { throw new Error("disk exploded: secret-path"); } });
+      vi.spyOn(getKnowledgeStore(), "search").mockRejectedValue(new Error("disk exploded: secret-path"));
       try {
         const ctx = await ctxOf("oolong");
         expect(ctx.unavailable).toContain("knowledge");
@@ -172,7 +173,7 @@ describe("context engine: retrieval, semantics, permissions", () => {
         expect(ctx.relevantMemories.length + ctx.currentTasks.length).toBeGreaterThan(0);
         expect(JSON.stringify(ctx)).not.toContain("secret-path");
         expect(formatContext(ctx)).toMatch(/Could not be read right now: .*knowledge/);
-      } finally { setKnowledgeProvider(null); }
+      } finally { vi.restoreAllMocks(); }
     });
   });
 

@@ -35,7 +35,7 @@ A graph database was deliberately not introduced: one-hop relations in Postgres 
 | `KNOWLEDGE_DELETE_SOURCE` | SENSITIVE | approval, cannot approve | destroys the source and everything derived |
 | reads: search / get item / list sources | READ lane (`KNOWLEDGE_READ`) | direct | audited with a `payloadHash`, never raw queries |
 
-Explicit `IdentityContext` everywhere; ownership enforced in every query (`id AND principalId`); the store performs no authorization beyond ownership. **This resolves the earlier "global knowledge" limitation for structured knowledge**: content is now per principal. The three Markdown files remain as a *legacy, read-only, global* document provider behind the same READ permission (they are not migrated automatically; ingest them as sources to make them principal-owned).
+Explicit `IdentityContext` everywhere; ownership enforced in every query (`id AND principalId`); the store performs no authorization beyond ownership. **This resolves the earlier "global knowledge" limitation for structured knowledge**: content is now per principal. The legacy global Markdown provider has been **retired** (BUILD #22): its three documents were ingested as the owner's principal-owned knowledge with `npm run ingest-markdown` (idempotent, audited) and archived, unserved, under `docs/legacy-knowledge/`.
 
 ## API (GuideHub-ready, no UI)
 `GET /api/knowledge/search?q=&kind=&limit=` · `GET /api/knowledge/items/:id` · `GET /api/knowledge/sources` · `POST /api/knowledge/ingest {title, content, format?, sourceKind?, uri?}` (strict body; a VOICE credential gets an approval request). JSON body limit is 256kb.
@@ -44,4 +44,4 @@ Explicit `IdentityContext` everywhere; ownership enforced in every query (`id AN
 The context engine reads structured items through `searchKnowledgeItems` (and legacy documents through `searchKnowledge`), both READ-permission-checked and audited. Items carry `kind`, `contradicted`, `confidence`; the section is `withheld` only when neither source is readable.
 
 ## Limitations / not in this phase
-No relevance ranking or embeddings (substring search); no model-based extraction; no file/URL fetching; relations are one hop in reads; no interface for editing items (retract + re-add) or for `KNOWLEDGE_DELETE_SOURCE` beyond the skill; the legacy `knowledge_documents` table stays unused; legacy Markdown documents are global.
+No relevance ranking or embeddings (substring search); no model-based extraction; no file/URL fetching; relations are one hop in reads; no interface for editing items (retract + re-add) or for `KNOWLEDGE_DELETE_SOURCE` beyond the skill; the legacy `knowledge_documents` table stays unused.

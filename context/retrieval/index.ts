@@ -1,6 +1,6 @@
 import { listTasks } from "../../skills/system/tasks.js";
 import { search as searchMemory, describeMemory } from "../../skills/system/memory.js";
-import { searchKnowledge, searchKnowledgeItems } from "../../skills/system/knowledge.js";
+import { searchKnowledgeItems } from "../../skills/system/knowledge.js";
 import { queryDecisions } from "../../skills/system/decisions.js";
 import { readLifeOverview } from "../../skills/system/life.js";
 import { readFutureOverview } from "../../skills/system/future.js";
@@ -10,7 +10,6 @@ import type { KnowledgeHit } from "../../knowledge/store/index.js";
 import { assertExplicitIdentity, runWithIdentity } from "../../identity/index.js";
 import type { ContextRequest, ContextEngine } from "../types/index.js";
 import type { ContextPackage, Result } from "../../core/types/index.js";
-import type { KnowledgeSearchResult } from "../../knowledge/types/index.js";
 import type { MemoryRecord } from "../../memory/types/index.js";
 import { queryTerms, rankByTermOverlap } from "../terms.js";
 
@@ -56,11 +55,10 @@ export class DeterministicContextEngine implements ContextEngine {
 
     const perTerm = <T>(fn: (term: string) => Promise<Result>): Promise<Result[]> => Promise.all(searchTerms.map((t) => fn(t)));
 
-    const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult, lifeResult, futureResult, learningResult] = await Promise.all([
+    const [tasksResult, memoryResults, itemResults, decisionResults, activityResult, lifeResult, futureResult, learningResult] = await Promise.all([
       listTasks(identity, { agentKey }),
       perTerm((term) => searchMemory(identity, { agentKey, query: { query: term, limit: L.termResults, asOf } })),
       perTerm((term) => searchKnowledgeItems(identity, { agentKey, query: term, limit: L.termResults })),
-      perTerm((term) => searchKnowledge(identity, { agentKey, query: term, limit: 2 })),
       terms.length ? Promise.all(terms.map((topic) => queryDecisions(identity, { agentKey, topic }))) : Promise.resolve([] as Result[]),
       listActivity(identity, { agentKey, range: "week", limit: L.activity }),
       readLifeOverview(identity, { agentKey }),
@@ -109,16 +107,13 @@ export class DeterministicContextEngine implements ContextEngine {
       }));
     }
 
-    // ── Knowledge: structured items first (principal-owned), then curated documents ──
-    // Both reads need KNOWLEDGE_READ: denied on both → `withheld`; a failure on either → `unavailable`.
+    // ── Knowledge: the principal's own structured items (Knowledge OS) ──
+    // Needs KNOWLEDGE_READ: denied → `withheld`; a failure → `unavailable`.
     let relevantKnowledge: ContextPackage["relevantKnowledge"] = [];
-    if (settle("knowledge", [...itemResults, ...docResults])) {
+    if (settle("knowledge", itemResults)) {
       relevantKnowledge = rankByTermOverlap(dataOf<KnowledgeHit>(itemResults), L.knowledge).map((k) => ({
         slug: `item:${k.id}`, title: clip(k.title), excerpt: clip(k.excerpt), kind: k.kind, contradicted: k.contradicted, confidence: k.confidence,
       }));
-      const docsPerTerm = dataOf<KnowledgeSearchResult>(docResults).map((list) => list.map((d) => ({ ...d, id: d.slug })));
-      const docs = rankByTermOverlap(docsPerTerm, 3);
-      relevantKnowledge = [...relevantKnowledge, ...docs.map((d) => ({ slug: d.slug, title: clip(d.title), excerpt: clip(d.excerpt) }))].slice(0, L.knowledge);
     }
 
     // ── Decisions ──

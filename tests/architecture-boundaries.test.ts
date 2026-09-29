@@ -105,7 +105,7 @@ describe("execution-path architecture boundaries", () => {
       const files = [...code.entries()].filter(([f]) => f.startsWith("context/"));
       expect(files.length).toBeGreaterThan(0);
       const offenders = files.flatMap(([f, src]) =>
-        runtimeImports(src).filter((s) => /(^|\/)(db|memory|knowledge\/markdown|gateway|connectors|interfaces|api)(\/|$)|@prisma\/client/.test(s)).map((s) => `${f} imports ${s}`)
+        runtimeImports(src).filter((s) => /(^|\/)(db|memory|gateway|connectors|interfaces|api)(\/|$)|@prisma\/client/.test(s)).map((s) => `${f} imports ${s}`)
       );
       expect(offenders).toEqual([]);
       expect(files.some(([, src]) => /\bgetDb\b/.test(src))).toBe(false);
@@ -116,10 +116,6 @@ describe("execution-path architecture boundaries", () => {
       expect(importersOf(/^context\//).filter((f) => f.startsWith("skills/") || f.startsWith("gateway/") || f.startsWith("memory/") || f.startsWith("knowledge/"))).toEqual([]);
     });
 
-    it("the Markdown knowledge provider is imported by exactly one module: the knowledge skill", () => {
-      expect(importersOf(/^knowledge\/markdown\/index(\.js)?$/)).toEqual(["skills/system/knowledge.ts"]);
-    });
-
     it("no knowledge module is an authorization boundary: none imports gateway, identity, skills, connectors or the API; only knowledge/store touches the database", () => {
       const files = [...code.entries()].filter(([f]) => f.startsWith("knowledge/"));
       const offenders = files.flatMap(([f, src]) =>
@@ -127,8 +123,8 @@ describe("execution-path architecture boundaries", () => {
       expect(offenders).toEqual([]);
       const dbUsers = files.filter(([, src]) => /(^|\/)db(\/|$)|@prisma\/client/.test(runtimeImports(src).join("\n"))).map(([f]) => f);
       expect(dbUsers.every((f) => f.startsWith("knowledge/store/"))).toBe(true);
-      // the Markdown provider and the pure pipeline never touch the database
-      expect(files.filter(([f]) => f.startsWith("knowledge/markdown/") || f.startsWith("knowledge/pipeline/")).some(([, src]) => /\bgetDb\b|@prisma\/client\/(?!.*type)/.test(src.replace(/import type[^;]*;/g, "")))).toBe(false);
+      // the pure pipeline never touches the database
+      expect(files.filter(([f]) => f.startsWith("knowledge/pipeline/")).some(([, src]) => /\bgetDb\b|@prisma\/client\/(?!.*type)/.test(src.replace(/import type[^;]*;/g, "")))).toBe(false);
     });
 
     it("the knowledge store and pipeline are used only by the knowledge skill (and each other)", () => {
@@ -191,6 +187,11 @@ describe("execution-path architecture boundaries", () => {
     it("the HTTP adapter never imports the gateway: audit and approvals go through the application layer", () => {
       const offenders = [...code.entries()].filter(([f]) => f.startsWith("api/")).flatMap(([f, src]) => runtimeImports(src).filter((s) => /(^|\/)gateway(\/|$)/.test(s)).map((s) => `${f} imports ${s}`));
       expect(offenders).toEqual([]);
+    });
+
+    it("the legacy global Markdown knowledge base is gone: no provider module, no markdown files served from code", () => {
+      expect([...code.keys()].filter((f) => f.startsWith("knowledge/markdown/"))).toEqual([]);
+      expect([...code.entries()].filter(([, src]) => /MarkdownKnowledgeProvider|setKnowledgeProvider|KnowledgeProvider\b/.test(src)).map(([f]) => f)).toEqual([]);
     });
 
     it("the gateway contains no write allow-list", () => {

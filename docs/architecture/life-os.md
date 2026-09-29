@@ -123,3 +123,12 @@ Reminder deliveries were already audited by the reminder engine. Debt removed: "
 audit goes through `application/audit.ts` (`listOwnAudit(identity, limit)` — principal only from the explicit identity, limit bounded 1–200 with default 50, the internal `agentId` FK dropped from the rows),
 and approvals through re-exports in `application/approvals.ts` (same ownership and interface-policy rules, enforced by the gateway). `GET /api/audit` accepts only `?limit=`; any other query parameter or an out-of-range value is `400`.
 Contract note: audit rows no longer include `agentId`. Debt removed: "direct GET /audit and GET /approvals* routes".
+
+# Decisions applied (BUILD #22)
+
+Two owner decisions, both implemented:
+1. **Audit outlives the principal.** `audit_logs.principalId` is no longer a foreign key: deleting a principal cascades its personal data but never its audit trail
+   (rows keep saying WHO, even though that principal is gone). `UPDATE` on audit rows is refused by the database (`append_only_guard`), so history can't be rewritten. Purging audit is an
+   explicit operator procedure (SQL), never a side effect. Tradeoff accepted: the database no longer stops an audit row naming an unknown principal id — writers always take the id from the explicit identity.
+2. **Legacy global Markdown knowledge retired.** The provider, its skill functions (`searchKnowledge`/`listKnowledge`/`readKnowledge`), the context-engine merge and their tests are gone. The three documents were ingested
+   as the owner's principal-owned knowledge (`scripts/ingest-markdown.ts`) and kept as documentation in `docs/legacy-knowledge/`. There is no global knowledge any more; a test asserts it.

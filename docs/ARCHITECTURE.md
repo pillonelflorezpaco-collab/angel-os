@@ -92,15 +92,15 @@ standing fact — see `docs/MEMORY.md`. The rest of the system depends on the
 backend — see "Memory provider abstraction" below.
 
 ### Knowledge (`knowledge/`)
-Markdown documents Angel curates by hand: principles, preferences, current
-priorities. Read through the `KnowledgeProvider` interface
-(`knowledge/types/index.ts`); the default implementation
-(`knowledge/markdown/`) reads flat files from disk. Not a document
-management system — list/read/search only.
+Per-principal Knowledge OS (`knowledge/pipeline` pure, `knowledge/store` DB; see
+`docs/architecture/knowledge-os.md`). The legacy global Markdown provider was
+**retired**: its three documents were ingested as the owner's own knowledge
+(`npm run ingest-markdown -- <principalId> <dir>`) and archived under
+`docs/legacy-knowledge/` (not served by any code).
 
 ### Current state vs. history
 Some structured objects represent *now* and are edited in place
-(`knowledge/markdown/current-priorities.md`, a `Goal`'s `status`). Others
+(a `Goal`'s `status`, an `Aspiration`'s current/gap). Others
 are an append-only history: `Decision` rows are never overwritten — a new
 decision on the same topic sets `supersedesId` on the prior one, so "what
 did I decide about X" stays answerable and the timeline stays intact.

@@ -7,34 +7,22 @@ import { LIMITS } from "../../knowledge/pipeline/index.js";
 import { PublicError } from "../../core/errors.js";
 import { recordActivity } from "../../activity/service.js";
 import { JARVIS_AGENT_KEY } from "../agent.js";
-import { MarkdownKnowledgeProvider } from "../../knowledge/markdown/index.js";
-import type { KnowledgeProvider, KnowledgeDocumentContent, KnowledgeDocumentSummary, KnowledgeSearchResult } from "../../knowledge/types/index.js";
 import { assertExplicitIdentity, type IdentityContext } from "../../identity/index.js";
 import type { Result } from "../../core/types/index.js";
 
 // The ONLY way Knowledge is read:
 //
 //   caller (with an explicit IdentityContext)
-//     → this skill → gatewayExecute (READ permission for the agent, audited)
-//     → KnowledgeProvider
+//     → this skill → gatewayExecute (KNOWLEDGE_READ for the agent, audited)
+//     → the principal-scoped Knowledge OS store
 //
-// The provider does no authorization — it just reads. Every access is
-// permission-checked and audited here, so a future Context/Jarvis module
-// can never read Markdown around the gateway. NOTE: the documents
-// themselves are still global files (single-owner deployment); the
-// permission gate is per principal, the content is not. See
-// docs/architecture/consolidation-build8.md.
+// The store does no authorization beyond ownership — every access is permission-checked and audited here.
+// (The legacy global Markdown knowledge base was retired: its documents were ingested as the owner's own
+// knowledge and archived under docs/legacy-knowledge/.)
 
 export const SKILL_KEY = "system.knowledge";
 export const RESOURCE = "angel:knowledge";
 export const ACTION = "KNOWLEDGE_READ";
-
-let provider: KnowledgeProvider = new MarkdownKnowledgeProvider();
-
-/** Test seam: substitute the provider (e.g. to prove it is never reached when access is denied). */
-export function setKnowledgeProvider(next: KnowledgeProvider | null): void {
-  provider = next ?? new MarkdownKnowledgeProvider();
-}
 
 export interface KnowledgeReadInput {
   /** The agent the read is permission-checked for. */
@@ -56,15 +44,6 @@ function read<T>(identity: IdentityContext, agentKey: string, parameters: Record
     "skill.system.knowledge"
   );
 }
-
-export const searchKnowledge = (identity: IdentityContext, input: KnowledgeReadInput & { query: string; limit?: number }) =>
-  read<KnowledgeSearchResult[]>(identity, input.agentKey, { op: "search", query: input.query, limit: input.limit ?? null }, () => provider.search(input.query, input.limit));
-
-export const listKnowledge = (identity: IdentityContext, input: KnowledgeReadInput) =>
-  read<KnowledgeDocumentSummary[]>(identity, input.agentKey, { op: "list" }, () => provider.listDocuments());
-
-export const readKnowledge = (identity: IdentityContext, input: KnowledgeReadInput & { slug: string }) =>
-  read<KnowledgeDocumentContent | null>(identity, input.agentKey, { op: "read", slug: input.slug }, () => provider.readDocument(input.slug));
 
 // ── Knowledge OS (structured, principal-owned) ──────────────────────────────
 //

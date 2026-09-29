@@ -1,24 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
-import path from "node:path";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
-import { searchKnowledge, listKnowledge, readKnowledge, setKnowledgeProvider, SKILL_KEY as K_SKILL, RESOURCE as K_RES } from "../skills/system/knowledge.js";
+import { searchKnowledgeItems, listKnowledgeSources, getKnowledgeItem, SKILL_KEY as K_SKILL, RESOURCE as K_RES } from "../skills/system/knowledge.js";
+import { getKnowledgeStore } from "../knowledge/store/index.js";
 import { DeterministicContextEngine } from "../context/retrieval/index.js";
 import { listAuditLog } from "../gateway/index.js";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
-import type { KnowledgeProvider } from "../knowledge/types/index.js";
 import { createPrincipal, deletePrincipal, ensureAgent, ensureSkill, grant } from "./helpers/fixtures.js";
 import { identityFor } from "./helpers/fakeActions.js";
 
+process.env.NODE_ENV = "test";
+
+// Knowledge is read only through the knowledge skill (gateway READ lane). The store is NOT an authorization
+// boundary — it does ownership scoping only — so these tests prove it is never reached without permission.
 describe("Knowledge is read only through the knowledge skill (Gateway READ)", () => {
   let a: string;
   let b: string;
-  const touched: string[] = [];
-  const spy: KnowledgeProvider = {
-    listDocuments: async () => { touched.push("list"); return [{ slug: "s", title: "T", tags: [] }]; },
-    readDocument: async (slug) => { touched.push(`read:${slug}`); return { slug, title: "T", tags: [], content: "body" }; },
-    search: async (q) => { touched.push(`search:${q}`); return [{ slug: "s", title: "T", tags: [], excerpt: "e" }]; },
-  };
+  const store = getKnowledgeStore();
+  const spies = () => [vi.spyOn(store, "search"), vi.spyOn(store, "listSources"), vi.spyOn(store, "getItem")];
+  const reached = () => spies().reduce((n, s) => n + s.mock.calls.length, 0);
 
   beforeAll(async () => {
     await ensureAgent(JARVIS_AGENT_KEY);
@@ -26,71 +25,79 @@ describe("Knowledge is read only through the knowledge skill (Gateway READ)", ()
     a = (await createPrincipal("Knowledge A")).id;
     b = (await createPrincipal("Knowledge B")).id;
     await grant(a, JARVIS_AGENT_KEY, K_SKILL, K_RES, "KNOWLEDGE_READ", "READ");
-    setKnowledgeProvider(spy);
+    await store.ingest(a, { title: "A notes", sourceKind: "note", format: "markdown", content: "# Boundary topic\nFact: zzkbq is the marker word" });
   });
-  afterAll(async () => { setKnowledgeProvider(null); await deletePrincipal(a); await deletePrincipal(b); await disconnectDb(); });
-  afterEach(() => { touched.length = 0; });
+  afterAll(async () => { vi.restoreAllMocks(); await deletePrincipal(a); await deletePrincipal(b); await disconnectDb(); });
+  afterEach(() => { vi.restoreAllMocks(); });
 
-  it("a granted READ reaches the provider and is audited as a gateway READ", async () => {
-    const r = await searchKnowledge(identityFor(a), { agentKey: JARVIS_AGENT_KEY, query: "hello" });
+  it("a granted READ reaches the store and is audited as a gateway READ (the request is fingerprinted, never stored raw)", async () => {
+    const r = await searchKnowledgeItems(identityFor(a), { agentKey: JARVIS_AGENT_KEY, query: "zzkbq" });
     expect(r.status).toBe("EXECUTED");
-    expect(touched).toEqual(["search:hello"]);
+    expect(JSON.stringify(r.data)).toContain("zzkbq");
     const row = (await listAuditLog(a, 20)).find((e) => e.resource === K_RES && e.eventType === "ACTION_EXECUTED");
     expect(row).toBeDefined();
-    expect(row!.metadata).toHaveProperty("payloadHash"); // the request is fingerprinted, never stored raw
-    expect(JSON.stringify(row)).not.toContain("hello");
+    expect(row!.metadata).toHaveProperty("payloadHash");
+    expect(JSON.stringify(row)).not.toContain("zzkbq");
   });
 
-  it("without the permission the provider is NEVER reached (the provider is not an authorization boundary)", async () => {
+  it("without the permission the store is NEVER reached", async () => {
+    const [search, list, get] = spies();
     for (const r of [
-      await searchKnowledge(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "secret" }),
-      await listKnowledge(identityFor(b), { agentKey: JARVIS_AGENT_KEY }),
-      await readKnowledge(identityFor(b), { agentKey: JARVIS_AGENT_KEY, slug: "principles" }),
+      await searchKnowledgeItems(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "secret" }),
+      await listKnowledgeSources(identityFor(b), { agentKey: JARVIS_AGENT_KEY }),
+      await getKnowledgeItem(identityFor(b), { agentKey: JARVIS_AGENT_KEY, itemId: "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e" }),
     ]) expect(r.status).toBe("DENIED");
-    expect(touched).toEqual([]);
+    expect([search, list, get].map((s) => s.mock.calls.length)).toEqual([0, 0, 0]);
     expect((await listAuditLog(b, 20)).filter((e) => e.eventType === "ACTION_DENIED" && e.resource === K_RES)).toHaveLength(3);
   });
 
   it("permissions are per agent: another agent's grant does not authorize this one", async () => {
     await grant(b, "some-other-knowledge-agent", K_SKILL, K_RES, "KNOWLEDGE_READ", "READ");
-    expect((await searchKnowledge(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "x" })).status).toBe("DENIED");
-    expect((await searchKnowledge(identityFor(b), { agentKey: "some-other-knowledge-agent", query: "x" })).status).toBe("EXECUTED");
+    expect((await searchKnowledgeItems(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "x" })).status).toBe("DENIED");
+    expect((await searchKnowledgeItems(identityFor(b), { agentKey: "some-other-knowledge-agent", query: "x" })).status).toBe("EXECUTED");
     await getDb().agent.delete({ where: { key: "some-other-knowledge-agent" } }).catch(() => undefined);
   });
 
   it("an explicit identity is required: nothing is read without one", async () => {
+    spies();
     for (const identity of [undefined, null, {}, { principalId: a }]) {
-      const r = await searchKnowledge(identity as never, { agentKey: JARVIS_AGENT_KEY, query: "x" });
+      const r = await searchKnowledgeItems(identity as never, { agentKey: JARVIS_AGENT_KEY, query: "x" });
       expect(r.status).toBe("FAILED");
     }
-    expect(touched).toEqual([]);
+    expect(reached()).toBe(0);
   });
 
   it("a DENIED permission row beats a grant elsewhere", async () => {
     await grant(b, JARVIS_AGENT_KEY, K_SKILL, K_RES, "KNOWLEDGE_READ", "READ", "DENIED");
-    expect((await readKnowledge(identityFor(b), { agentKey: JARVIS_AGENT_KEY, slug: "principles" })).status).toBe("DENIED");
-    expect(touched).toEqual([]);
+    const [search] = spies();
+    expect((await searchKnowledgeItems(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "x" })).status).toBe("DENIED");
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("there is no global knowledge: one principal's items are never visible to another, even with the grant", async () => {
+    await grant(b, JARVIS_AGENT_KEY, K_SKILL, K_RES, "KNOWLEDGE_READ", "READ", "ALLOWED");
+    const r = await searchKnowledgeItems(identityFor(b), { agentKey: JARVIS_AGENT_KEY, query: "zzkbq" });
+    expect(r.status).toBe("EXECUTED");
+    expect(JSON.stringify(r.data)).not.toContain("zzkbq");
   });
 
   describe("context goes through the skill", () => {
-    it("with the grant, context includes knowledge — and the gateway READ is audited", async () => {
-      const ctx = await new DeterministicContextEngine().buildContext({ identity: identityFor(a), agentKey: JARVIS_AGENT_KEY, query: "anything" });
-      expect(ctx.relevantKnowledge).toEqual([{ slug: "s", title: "T", excerpt: "e" }]);
-      expect(touched).toContain("search:anything");
+    it("with the grant, context includes the principal's knowledge — and the gateway READ is audited", async () => {
+      const ctx = await new DeterministicContextEngine().buildContext({ identity: identityFor(a), agentKey: JARVIS_AGENT_KEY, query: "zzkbq" });
+      expect(ctx.relevantKnowledge.map((k) => k.slug)).toEqual(expect.arrayContaining([expect.stringMatching(/^item:/)]));
+      expect(JSON.stringify(ctx.relevantKnowledge)).toContain("zzkbq");
       expect((await listAuditLog(a, 50)).some((e) => e.resource === K_RES)).toBe(true);
     });
 
-    it("without the grant, knowledge is withheld and the provider is not touched", async () => {
-      const ctx = await new DeterministicContextEngine().buildContext({ identity: identityFor(b), agentKey: JARVIS_AGENT_KEY, query: "anything" });
-      expect(ctx.relevantKnowledge).toEqual([]);
-      expect(ctx.withheld).toContain("knowledge");
-      expect(touched).toEqual([]);
+    it("without the grant, knowledge is withheld and the store is not touched", async () => {
+      const c = (await createPrincipal("Knowledge C")).id;
+      try {
+        const [search] = spies();
+        const ctx = await new DeterministicContextEngine().buildContext({ identity: identityFor(c), agentKey: JARVIS_AGENT_KEY, query: "anything" });
+        expect(ctx.relevantKnowledge).toEqual([]);
+        expect(ctx.withheld).toContain("knowledge");
+        expect(search).not.toHaveBeenCalled();
+      } finally { await deletePrincipal(c); }
     });
-  });
-
-  it("structural: the Markdown provider itself contains no authorization (imports no gateway/identity/skills/db)", () => {
-    const src = readFileSync(path.resolve(import.meta.dirname, "../knowledge/markdown/index.ts"), "utf-8");
-    const imports = [...src.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
-    expect(imports.filter((i) => /gateway|identity|skills|db|prisma/.test(i))).toEqual([]);
   });
 });

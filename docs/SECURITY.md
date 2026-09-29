@@ -115,7 +115,8 @@ Core) can forget it — see `tests/two-principal.test.ts`.
 
 ## Knowledge document path safety
 
-`knowledge/markdown/index.ts`'s `resolveSafeDocPath` rejects any slug that
+*Historical (the file-backed provider was retired; nothing serves files by slug any more).*
+`knowledge/markdown/index.ts`'s `resolveSafeDocPath` rejected any slug that
 isn't `^[a-zA-Z0-9_-]+$` (no `.`, no `/`, no `\`, no leading `-` issue since
 the whole string must match), and independently verifies the resolved
 absolute path still starts with the knowledge directory before any file is

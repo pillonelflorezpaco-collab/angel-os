@@ -31,7 +31,6 @@ model Principal {
   memories           Memory[]
   permissions        Permission[]
   approvals          ApprovalRequest[]
-  auditLogs          AuditLog[]
   connections        Connection[]
   oauthStates        OAuthState[]
   apiTokens          ApiToken[]
@@ -708,8 +707,8 @@ enum AuditResult {
 
 model AuditLog {
   id              String         @id @default(uuid())
+  // Deliberately NOT a foreign key: audit history outlives the principal it describes, so deleting a principal never erases its trail.
   principalId     String
-  principal       Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
   agentId         String?
   agent           Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
   eventType       AuditEventType

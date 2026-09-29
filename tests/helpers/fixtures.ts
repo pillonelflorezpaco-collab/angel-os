@@ -32,4 +32,6 @@ export async function grant(
 
 export async function deletePrincipal(id: string) {
   await getDb().principal.delete({ where: { id } }).catch(() => undefined);
+  // Audit history deliberately outlives its principal (no FK cascade); tests remove their own rows so the shared dev DB stays clean.
+  await getDb().auditLog.deleteMany({ where: { principalId: id } }).catch(() => undefined);
 }
