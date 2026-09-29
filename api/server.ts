@@ -7,13 +7,8 @@ import { createTask, listTasks, createReminder, listReminders } from "../skills/
 import { search as searchMemory, MEMORY_TYPE_VALUES } from "../skills/system/memory.js";
 import { searchKnowledgeItems, getKnowledgeItem, listKnowledgeSources, ingestKnowledge, KNOWLEDGE_KIND_VALUES } from "../skills/system/knowledge.js";
 import { listActivity, summarizeActivity } from "../skills/system/activity.js";
-import {
-  listAuditLog,
-  decideApproval,
-  listPendingApprovals,
-  getApproval,
-  type ApprovalCode,
-} from "../gateway/index.js";
+import { listApprovalViews, getApprovalView, decideApprovalRequest, type ApprovalCode } from "../application/approvals.js";
+import { listOwnAudit, MAX_AUDIT_LIMIT, DEFAULT_AUDIT_LIMIT } from "../application/audit.js";
 import { getConnectionService, getConnectorRegistry, ConnectionNotFoundError, OAuthStateInvalidError, OAuthStateExpiredError } from "../connectors/index.js";
 import { GoogleOAuthConfigError, GoogleOAuthApiError } from "../connectors/google/oauthClient.js";
 import { registerSkillActions, verifyProductionActions } from "../skills/manifest.js";
@@ -266,7 +261,9 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     "/audit",
     asyncRoute(async (req, res) => {
-      res.json(await listAuditLog(identityOf(req).principalId));
+      const parsed = z.object({ limit: z.coerce.number().int().min(1).max(MAX_AUDIT_LIMIT).default(DEFAULT_AUDIT_LIMIT) }).strict().safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await listOwnAudit(identityOf(req), parsed.data.limit));
     })
   );
 
@@ -275,14 +272,14 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     "/approvals",
     asyncRoute(async (req, res) => {
-      res.json(await listPendingApprovals(identityOf(req)));
+      res.json(await listApprovalViews(identityOf(req)));
     })
   );
 
   api.get(
     "/approvals/:id",
     asyncRoute(async (req, res) => {
-      const outcome = await getApproval(identityOf(req), req.params.id);
+      const outcome = await getApprovalView(identityOf(req), req.params.id);
       if (!outcome.ok) return res.status(APPROVAL_HTTP_STATUS[outcome.code as Exclude<ApprovalCode, "OK">]).json({ error: outcome.message });
       res.json(outcome.approval);
     })
@@ -299,7 +296,7 @@ export function createApp(options: AppOptions = {}) {
         if (!noBody.safeParse(req.body ?? {}).success) {
           return res.status(400).json({ error: "Approval decisions take no parameters." });
         }
-        const outcome = await decideApproval(identityOf(req), req.params.id, decision);
+        const outcome = await decideApprovalRequest(identityOf(req), req.params.id, decision);
         if (!outcome.ok) return res.status(APPROVAL_HTTP_STATUS[outcome.code as Exclude<ApprovalCode, "OK">]).json({ error: outcome.message, code: outcome.code });
         res.json({
           message: outcome.message,

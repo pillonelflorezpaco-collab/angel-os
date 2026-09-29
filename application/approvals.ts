@@ -27,3 +27,7 @@ export async function decide(identity: IdentityContext, approvalId: string, deci
   const outcome = await decideApproval(identity, approvalId, decision);
   return { ok: outcome.ok && (decision === "DENIED" || outcome.executed === true), message: outcome.message };
 }
+
+// Full-fidelity approval operations for the HTTP interface (which may not import the gateway itself).
+// Same rules as above: an explicit IdentityContext in, ownership and interface policy enforced by the gateway.
+export { listPendingApprovals as listApprovalViews, getApproval as getApprovalView, decideApproval as decideApprovalRequest, type ApprovalCode } from "../gateway/index.js";

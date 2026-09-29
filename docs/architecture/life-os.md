@@ -116,3 +116,10 @@ the chat id. The adapter labels each reply with who it is for; the poller report
 `application/outbound.ts` and wired in `scripts/telegram.ts` (a test fails if the composition root stops wiring it). Nothing is sent to — or audited for — unlinked senders, group chats or ignored updates.
 Auditing is after-the-fact and best-effort: a failing audit is logged and never blocks, duplicates or hides a reply (a send that fails is recorded as FAILED and the poll loop continues).
 Reminder deliveries were already audited by the reminder engine. Debt removed: "Telegram outbound replies unaudited".
+
+# Hardening pass (BUILD #21): audit and approvals go through the application layer
+
+`GET /api/audit` and `GET /api/approvals*` used to call the gateway straight from the HTTP adapter. The adapter now imports nothing from `gateway/` (a boundary test enforces it):
+audit goes through `application/audit.ts` (`listOwnAudit(identity, limit)` — principal only from the explicit identity, limit bounded 1–200 with default 50, the internal `agentId` FK dropped from the rows),
+and approvals through re-exports in `application/approvals.ts` (same ownership and interface-policy rules, enforced by the gateway). `GET /api/audit` accepts only `?limit=`; any other query parameter or an out-of-range value is `400`.
+Contract note: audit rows no longer include `agentId`. Debt removed: "direct GET /audit and GET /approvals* routes".

@@ -57,7 +57,7 @@ Dates are ISO-8601 UTC strings.
 | `GET /api/memory/search?q=` | Search memory | memory rows (`type`, `status` included) |
 | `GET /api/activity?range=today\|yesterday\|week&limit=` | Life history, newest first | activity rows |
 | `GET /api/activity/summary?range=` | Counts | `{range,timeZone,from,to,total,byType,byArea}` |
-| `GET /api/audit` | Security/system trace (not life history) | audit rows |
+| `GET /api/audit[?limit=1..200]` | Security/system trace (not life history), newest first, default 50; only `limit` is accepted; rows have no `agentId` | audit rows |
 | `GET /api/approvals` | Caller's pending, unexpired approvals (`ApprovalView[]`, no parameters) | not a `Result` |
 | `GET /api/approvals/:id` | One approval incl. the exact stored `parameters` | `ApprovalView` |
 | `POST /api/approvals/:id/approve` · `/deny` | Decide (body must be empty `{}`); approve also executes, once | see below |

@@ -188,6 +188,11 @@ describe("execution-path architecture boundaries", () => {
       expect(offenders).toEqual([]);
     });
 
+    it("the HTTP adapter never imports the gateway: audit and approvals go through the application layer", () => {
+      const offenders = [...code.entries()].filter(([f]) => f.startsWith("api/")).flatMap(([f, src]) => runtimeImports(src).filter((s) => /(^|\/)gateway(\/|$)/.test(s)).map((s) => `${f} imports ${s}`));
+      expect(offenders).toEqual([]);
+    });
+
     it("the gateway contains no write allow-list", () => {
       expect(/ALLOWLIST|isLegacyWriteAllowed/i.test(code.get("gateway/index.ts")!)).toBe(false);
     });
