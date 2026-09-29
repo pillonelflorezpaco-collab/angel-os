@@ -23,7 +23,8 @@ export interface Intent {
 export interface ContextPackage {
   currentTasks: { id: string; title: string; status: string }[];
   relevantMemories: { id: string; content: string; type: string; status: string; confirmed: boolean }[];
-  relevantKnowledge: { slug: string; title: string; excerpt: string }[];
+  /** Curated documents (slug) and structured knowledge items (`item:<id>`, with kind and contradiction flag). */
+  relevantKnowledge: { slug: string; title: string; excerpt: string; kind?: string; contradicted?: boolean; confidence?: number | null }[];
   /** Sections not included because the requesting agent lacks permission. Their data was never fetched. */
   withheld: string[];
   notes: string[];

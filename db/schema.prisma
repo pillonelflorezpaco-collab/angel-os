@@ -38,6 +38,9 @@ model Principal {
   externalIdentities ExternalIdentity[]
   activities         Activity[]
   memoryRevisions    MemoryRevision[]
+  knowledgeSources   KnowledgeSource[]
+  knowledgeItems     KnowledgeItem[]
+  knowledgeRelations KnowledgeRelation[]
 
   @@map("principals")
 }
@@ -309,6 +312,115 @@ model KnowledgeDocument {
   updatedAt DateTime @updatedAt
 
   @@map("knowledge_documents")
+}
+
+// ── Knowledge OS (Build #10): information about the WORLD, owned per principal ──
+//
+// Separate from Memory (information about Angel): different tables, no
+// conversion path in either direction. Everything here is scoped by
+// principalId; an item's kind is immutable (a HYPOTHESIS never becomes a
+// FACT by editing); relations can only join items of the SAME principal
+// (enforced by a database trigger).
+
+enum KnowledgeKind {
+  FACT
+  CONCEPT
+  PRINCIPLE
+  METHOD
+  PERSON
+  EVENT
+  DATE
+  QUESTION
+  HYPOTHESIS
+  INSIGHT
+  CONTRADICTION
+  EXPERIENCE // a documented experience / case study in the world; Angel's OWN experiences are Memory
+}
+
+enum KnowledgeRelationKind {
+  RELATED_TO
+  EXPLAINS
+  SUPPORTS
+  CONTRADICTS
+  CAUSES
+  EXAMPLE_OF
+  APPLIES_TO
+  INSPIRED_BY
+  DERIVED_FROM
+  PART_OF
+  SIMILAR_TO
+}
+
+enum KnowledgeStatus {
+  ACTIVE
+  RETRACTED
+}
+
+enum KnowledgeOrigin {
+  INGESTED // produced by the ingestion pipeline from a source
+  MANUAL // entered by hand; carries no source
+}
+
+// SOURCE: where knowledge came from (a note, a markdown file, a book, a URL reference).
+// The reference is descriptive only — nothing is ever fetched from it.
+model KnowledgeSource {
+  id          String          @id @default(uuid())
+  principalId String
+  principal   Principal       @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title       String
+  kind        String // note | markdown | text | book | article | url ...
+  uri         String?
+  contentHash String // SHA-256 of the ingested content: the same content is never ingested twice
+  ingestedAt  DateTime        @default(now())
+  items       KnowledgeItem[]
+
+  @@unique([principalId, contentHash])
+  @@index([principalId])
+  @@map("knowledge_sources")
+}
+
+model KnowledgeItem {
+  id              String              @id @default(uuid())
+  principalId     String
+  principal       Principal           @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  kind            KnowledgeKind
+  title           String
+  body            String
+  origin          KnowledgeOrigin
+  sourceId        String?
+  source          KnowledgeSource?    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  confidence      Float? // meaningful for HYPOTHESIS / INSIGHT / FACT claims; null = not assessed
+  eventAt         DateTime? // EVENT / DATE items
+  status          KnowledgeStatus     @default(ACTIVE)
+  retractedAt     DateTime?
+  retractedReason String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  from            KnowledgeRelation[] @relation("RelationFrom")
+  to              KnowledgeRelation[] @relation("RelationTo")
+
+  @@index([principalId, kind])
+  @@index([principalId, status])
+  @@index([sourceId])
+  @@map("knowledge_items")
+}
+
+model KnowledgeRelation {
+  id          String                @id @default(uuid())
+  principalId String
+  principal   Principal             @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  fromId      String
+  from        KnowledgeItem         @relation("RelationFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId        String
+  to          KnowledgeItem         @relation("RelationTo", fields: [toId], references: [id], onDelete: Cascade)
+  kind        KnowledgeRelationKind
+  note        String?
+  createdAt   DateTime              @default(now())
+
+  @@unique([fromId, toId, kind])
+  @@index([principalId])
+  @@index([toId])
+  @@map("knowledge_relations")
 }
 
 // ── Skills & Agents (registry, not credentials) ────────────────────────────

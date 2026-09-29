@@ -4,6 +4,7 @@ import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { handleInterfaceMessage, MAX_INPUT_CHARS } from "../application/dispatcher.js";
 import { createTask, listTasks, createReminder, listReminders } from "../skills/system/tasks.js";
 import { search as searchMemory, MEMORY_TYPE_VALUES } from "../skills/system/memory.js";
+import { searchKnowledgeItems, getKnowledgeItem, listKnowledgeSources, ingestKnowledge, KNOWLEDGE_KIND_VALUES } from "../skills/system/knowledge.js";
 import { listActivity, summarizeActivity } from "../skills/system/activity.js";
 import {
   listAuditLog,
@@ -55,7 +56,8 @@ export function createApp(options: AppOptions = {}) {
     next();
   });
   app.use(cors(options.corsOrigins ?? parseCorsOrigins(process.env.ANGEL_OS_CORS_ORIGINS)));
-  app.use(express.json({ limit: "100kb" }));
+  // 256kb: room for one 100k-character knowledge document as JSON
+  app.use(express.json({ limit: "256kb" }));
 
   // ── Public ──────────────────────────────────────────────────────────────
   app.get("/health", (_req, res) => {
@@ -182,6 +184,45 @@ export function createApp(options: AppOptions = {}) {
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
       const { q, type, subject } = parsed.data;
       res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query: q, ...(type ? { type } : {}), ...(subject ? { subject } : {}) } }));
+    })
+  );
+
+  // Knowledge OS: structured, principal-owned knowledge. Reads go through the READ lane;
+  // ingestion is an ActionDefinition (voice credentials get an approval request).
+  const knowledgeSearchSchema = z.object({ q: z.string().max(500).default(""), kind: z.enum(KNOWLEDGE_KIND_VALUES).optional(), limit: z.coerce.number().int().min(1).max(50).optional() });
+  api.get(
+    "/knowledge/search",
+    asyncRoute(async (req, res) => {
+      const parsed = knowledgeSearchSchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await searchKnowledgeItems(identityOf(req), { agentKey: JARVIS_AGENT_KEY, query: parsed.data.q, kinds: parsed.data.kind ? [parsed.data.kind] : undefined, limit: parsed.data.limit }));
+    })
+  );
+  api.get(
+    "/knowledge/sources",
+    asyncRoute(async (req, res) => {
+      res.json(await listKnowledgeSources(identityOf(req), { agentKey: JARVIS_AGENT_KEY }));
+    })
+  );
+  api.get(
+    "/knowledge/items/:id",
+    asyncRoute(async (req, res) => {
+      res.json(await getKnowledgeItem(identityOf(req), { agentKey: JARVIS_AGENT_KEY, itemId: req.params.id }));
+    })
+  );
+  const ingestSchema = z.object({
+    title: z.string().min(1).max(200),
+    content: z.string().min(1).max(100_000),
+    format: z.enum(["markdown", "text"]).optional(),
+    sourceKind: z.string().max(40).optional(),
+    uri: z.string().max(500).optional(),
+  }).strict();
+  api.post(
+    "/knowledge/ingest",
+    asyncRoute(async (req, res) => {
+      const parsed = ingestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await ingestKnowledge(identityOf(req), parsed.data));
     })
   );
 

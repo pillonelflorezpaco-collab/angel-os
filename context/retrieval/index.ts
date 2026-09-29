@@ -1,6 +1,7 @@
 import { listTasks } from "../../skills/system/tasks.js";
 import { search as searchMemory } from "../../skills/system/memory.js";
-import { searchKnowledge } from "../../skills/system/knowledge.js";
+import { searchKnowledge, searchKnowledgeItems } from "../../skills/system/knowledge.js";
+import type { KnowledgeHit } from "../../knowledge/store/index.js";
 import { assertExplicitIdentity, runWithIdentity } from "../../identity/index.js";
 import type { ContextRequest, ContextEngine } from "../types/index.js";
 import type { ContextPackage } from "../../core/types/index.js";
@@ -31,10 +32,11 @@ export class DeterministicContextEngine implements ContextEngine {
   }
 
   private async build(principalId: string, request: ContextRequest): Promise<ContextPackage> {
-    const [tasksResult, memoryResult, knowledgeResult] = await Promise.all([
+    const [tasksResult, memoryResult, knowledgeResult, itemsResult] = await Promise.all([
       listTasks({ principalId, agentKey: request.agentKey }),
       searchMemory({ principalId, agentKey: request.agentKey, query: { query: request.query, limit: 5 } }),
       searchKnowledge(request.identity, { agentKey: request.agentKey, query: request.query, limit: 3 }),
+      searchKnowledgeItems(request.identity, { agentKey: request.agentKey, query: request.query, limit: 5 }),
     ]);
 
     const withheld: string[] = [];
@@ -67,12 +69,19 @@ export class DeterministicContextEngine implements ContextEngine {
       withheld.push("memories");
     }
 
+    // Structured knowledge (principal-owned) first, then curated documents. Contradicted items are
+    // flagged, never dropped: the consumer must see that the world knowledge is disputed.
     let relevantKnowledge: ContextPackage["relevantKnowledge"] = [];
-    if (knowledgeResult.status === "EXECUTED") {
-      relevantKnowledge = (knowledgeResult.data as KnowledgeSearchResult[]).map((k) => ({ slug: k.slug, title: k.title, excerpt: k.excerpt }));
-    } else {
-      withheld.push("knowledge");
+    if (itemsResult.status === "EXECUTED") {
+      relevantKnowledge = (itemsResult.data as KnowledgeHit[]).map((k) => ({
+        slug: `item:${k.id}`, title: k.title, excerpt: k.excerpt, kind: k.kind, contradicted: k.contradicted, confidence: k.confidence,
+      }));
     }
+    if (knowledgeResult.status === "EXECUTED") {
+      relevantKnowledge = [...relevantKnowledge, ...(knowledgeResult.data as KnowledgeSearchResult[]).map((k) => ({ slug: k.slug, title: k.title, excerpt: k.excerpt }))];
+    }
+    // Withheld only when NEITHER source was readable (both need KNOWLEDGE_READ).
+    if (knowledgeResult.status !== "EXECUTED" && itemsResult.status !== "EXECUTED") withheld.push("knowledge");
 
     return {
       currentTasks,

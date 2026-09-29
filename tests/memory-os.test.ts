@@ -385,10 +385,10 @@ describe("Memory OS: provenance, temporal validity, lifecycle, history", () => {
     });
 
     it("creating a memory records Activity that references it without copying its content; retraction records none", async () => {
-      const id = await create({ type: "FACT", content: "activity-safe secret 7712", source: "t" });
+      const id = await create({ type: "FACT", content: "activity-safe secret rmtb", source: "t" });
       const act = await getDb().activity.findFirst({ where: { principalId: a, type: "MEMORY_CREATED", refId: id } });
       expect(act).toMatchObject({ refType: "memory" });
-      expect(JSON.stringify(act)).not.toContain("7712");
+      expect(JSON.stringify(act)).not.toContain("rmtb");
       const before = await getDb().activity.count({ where: { principalId: a } });
       await approve(await retractMemory(idA(), { memoryId: id, reason: "test" }));
       expect(await getDb().activity.count({ where: { principalId: a } })).toBe(before);

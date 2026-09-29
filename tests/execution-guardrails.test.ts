@@ -109,7 +109,12 @@ describe("gatewayExecute guardrail (legacy path is READ-only)", () => {
   });
 
   it("every production write is a registered ActionDefinition", () => {
-    expect(PRODUCTION_ACTIONS.sort()).toEqual([
+    expect([...PRODUCTION_ACTIONS].sort()).toEqual([
+      "system.knowledge|KNOWLEDGE_ADD",
+      "system.knowledge|KNOWLEDGE_DELETE_SOURCE",
+      "system.knowledge|KNOWLEDGE_INGEST",
+      "system.knowledge|KNOWLEDGE_RELATE",
+      "system.knowledge|KNOWLEDGE_RETRACT",
       "system.memory|MEMORY_CONFIRM",
       "system.memory|MEMORY_CREATE",
       "system.memory|MEMORY_DELETE",
