@@ -107,3 +107,12 @@ used to take `{principalId, agentKey}`. They now take `(identity: IdentityContex
 (`skills/readerIdentity.ts`): a missing or malformed identity fails closed before anything is read or audited, and a smuggled `principalId` is overridden.
 Jarvis Core follows: every read intent requires an identity, and a request whose `principalId` disagrees with its identity is refused. A boundary test now forbids any
 `principalId` field in a skill input type. Debt removed: "legacy READ skills taking principalId and agentKey" (the `agentKey` is still a parameter of the READ lane by design).
+
+# Hardening pass (BUILD #20): outbound Telegram replies are audited
+
+Everything Jarvis sends to Telegram (replies, help, `/pending`, approval results, invalid buttons) now leaves an audit row — `INTERFACE_REPLY_SENT` / `INTERFACE_REPLY_FAILED`
+(resource `interface:telegram`, source `interfaces.telegram`) with the **principal**, the reply **kind**, size, button count, request id and a 16-hex **content hash** — never the text and never
+the chat id. The adapter labels each reply with who it is for; the poller reports the outcome to an injected `OutboundAudit` (interfaces still have no database access), implemented in
+`application/outbound.ts` and wired in `scripts/telegram.ts` (a test fails if the composition root stops wiring it). Nothing is sent to — or audited for — unlinked senders, group chats or ignored updates.
+Auditing is after-the-fact and best-effort: a failing audit is logged and never blocks, duplicates or hides a reply (a send that fails is recorded as FAILED and the poll loop continues).
+Reminder deliveries were already audited by the reminder engine. Debt removed: "Telegram outbound replies unaudited".

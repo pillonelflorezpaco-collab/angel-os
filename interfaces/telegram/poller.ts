@@ -1,7 +1,7 @@
 import { logInternalError } from "../../core/errors.js";
 import type { TelegramApiLike } from "./api.js";
 import { TelegramApiError } from "./api.js";
-import type { TelegramUpdate, TelegramReply } from "./types.js";
+import type { OutboundAudit, TelegramUpdate, TelegramReply } from "./types.js";
 
 /** Where polling left off, so a restart never replays old messages. */
 export interface CursorStore {
@@ -19,7 +19,9 @@ export class TelegramPoller {
     private readonly api: TelegramApiLike,
     private readonly handler: UpdateHandler,
     private readonly cursor: CursorStore,
-    private readonly longPollSec = 25
+    private readonly longPollSec = 25,
+    /** Records every reply that leaves the system (sent or failed). Best-effort: a failing audit never blocks or duplicates a reply. */
+    private readonly audit?: OutboundAudit
   ) {}
 
   /** Fetches and handles one batch of updates. Returns how many were fetched. */
@@ -41,13 +43,33 @@ export class TelegramPoller {
       try {
         const reply = await this.handler.handleUpdate(update);
         if (reply?.answerCallbackId) await this.api.answerCallbackQuery(reply.answerCallbackId);
-        if (reply) await this.api.sendMessage(reply.chatId, reply.text, reply.buttons);
+        if (reply) await this.send(reply);
       } catch (err) {
         // One bad update must not stop the loop. Never log the message text.
         logInternalError("telegram.update", err);
       }
     }
     return updates.length;
+  }
+
+  private async send(reply: TelegramReply): Promise<void> {
+    const event = reply.audit && { ...reply.audit, text: reply.text, buttons: reply.buttons?.flat().length ?? 0 };
+    try {
+      await this.api.sendMessage(reply.chatId, reply.text, reply.buttons);
+    } catch (err) {
+      if (event) await this.record({ ...event, ok: false });
+      throw err;
+    }
+    if (event) await this.record({ ...event, ok: true });
+  }
+
+  private async record(event: Parameters<OutboundAudit>[0]): Promise<void> {
+    if (!this.audit) return;
+    try {
+      await this.audit(event);
+    } catch (err) {
+      logInternalError("telegram.audit", err); // the reply already happened (or failed); never retry or hide it
+    }
   }
 
   /** Polls until aborted, backing off on errors (and honouring Telegram's retry_after). */

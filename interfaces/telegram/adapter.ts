@@ -3,7 +3,7 @@ import { getExternalIdentityService, createIdentity, type ExternalIdentityServic
 import { handleInterfaceMessage } from "../../application/dispatcher.js";
 import { decide, listPending, type DecisionReply, type PendingApprovalSummary } from "../../application/approvals.js";
 import type { Result } from "../../core/types/index.js";
-import type { TelegramButton, TelegramCallbackQuery, TelegramReply, TelegramUpdate } from "./types.js";
+import type { OutboundKind, TelegramButton, TelegramCallbackQuery, TelegramReply, TelegramUpdate } from "./types.js";
 
 // Telegram is an ADAPTER, not a second brain. Its whole job:
 //
@@ -78,7 +78,7 @@ export class TelegramAdapter {
     if (!identity) return null;
 
     const text = message.text.trim();
-    if (text === "/start" || text === "/help") return { chatId: message.chat.id, text: HELP_TEXT };
+    if (text === "/start" || text === "/help") return { chatId: message.chat.id, text: HELP_TEXT, audit: auditOf(identity, "help") };
     if (text === "/pending") return this.pendingReply(identity, message.chat.id);
 
     const result = await this.deps.dispatch(identity, text);
@@ -87,6 +87,7 @@ export class TelegramAdapter {
       text: truncate(result.message),
       // A proposal that needs approval is shown with the buttons that decide THAT stored approval.
       buttons: result.status === "PENDING_APPROVAL" && result.approvalId ? [approvalButtons(result.approvalId)] : undefined,
+      audit: auditOf(identity, "message"),
     };
   }
 
@@ -105,11 +106,12 @@ export class TelegramAdapter {
 
   private async pendingReply(identity: IdentityContext, chatId: number): Promise<TelegramReply> {
     const pending = (await this.deps.approvals.list(identity)).slice(0, 5);
-    if (pending.length === 0) return { chatId, text: "Nothing is waiting for your approval." };
+    if (pending.length === 0) return { chatId, text: "Nothing is waiting for your approval.", audit: auditOf(identity, "pending") };
     const lines = pending.map((p, i) => `${i + 1}. ${p.summary}`);
     return {
       chatId,
       text: truncate(`Waiting for your approval:\n${lines.join("\n")}`),
+      audit: auditOf(identity, "pending"),
       buttons: pending.map((p, i) => [
         { text: `✅ Approve ${i + 1}`, data: `apv:${p.id}:a` },
         { text: `❌ Deny ${i + 1}`, data: `apv:${p.id}:d` },
@@ -125,12 +127,14 @@ export class TelegramAdapter {
 
     const match = CALLBACK_PATTERN.exec(cb.data ?? "");
     const chatId = cb.message.chat.id;
-    if (!match) return { chatId, text: "That button isn't valid.", answerCallbackId: cb.id };
+    if (!match) return { chatId, text: "That button isn't valid.", answerCallbackId: cb.id, audit: auditOf(identity, "invalid_button") };
 
     const reply = await this.deps.approvals.decide(identity, match[1], match[2] === "a" ? "APPROVED" : "DENIED");
-    return { chatId, text: truncate(reply.message), answerCallbackId: cb.id };
+    return { chatId, text: truncate(reply.message), answerCallbackId: cb.id, audit: auditOf(identity, "approval") };
   }
 }
+
+const auditOf = (identity: IdentityContext, kind: OutboundKind) => ({ principalId: identity.principalId, requestId: identity.requestId, kind });
 
 function truncate(text: string): string {
   return text.length > MAX_REPLY_CHARS ? `${text.slice(0, MAX_REPLY_CHARS)}…` : text;
