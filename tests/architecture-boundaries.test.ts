@@ -9,7 +9,7 @@ import path from "node:path";
 // adapter/API/Core/application rules; these are the execution-path ones.)
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "db"];
+const PRODUCTION_DIRS = ["core", "skills", "gateway", "interfaces", "application", "api", "identity", "activity", "reminders", "connectors", "memory", "context", "knowledge", "life", "future", "db"];
 
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((n) => {
@@ -97,7 +97,7 @@ describe("execution-path architecture boundaries", () => {
   });
 
   it("nothing outside db/, identity/, gateway/, skills/, memory/, connectors/, activity/, reminders/, context/ opens a database connection", () => {
-    expect(outside(filesMentioning(/\bgetDb\b|@prisma\/client/), /^(db|identity|gateway|skills|memory|connectors|activity|reminders|context|knowledge\/store)\//).filter((f) => !/^skills\/.*\.ts$/.test(f))).toEqual([]);
+    expect(outside(filesMentioning(/\bgetDb\b|@prisma\/client/), /^(db|identity|gateway|skills|memory|connectors|activity|reminders|context|knowledge\/store)\/|^(life\/(store|decisions)|future\/store)\.ts$/).filter((f) => !/^skills\/.*\.ts$/.test(f))).toEqual([]);
   });
 
   describe("BUILD #8: knowledge, context and mutation boundaries", () => {
@@ -140,6 +140,16 @@ describe("execution-path architecture boundaries", () => {
       const src = code.get("knowledge/pipeline/index.ts")!;
       expect(runtimeImports(src)).toEqual([]);
       expect(/\b(fetch|readFile|writeFile|require|process\.|getDb)\b/.test(src)).toBe(false);
+    });
+
+    it("life/ and future/ are persistence only (no gateway, identity, skills, connectors or API); only their stores touch the database; progress is pure", () => {
+      const files = [...code.entries()].filter(([f]) => f.startsWith("life/") || f.startsWith("future/"));
+      expect(files.length).toBeGreaterThan(0);
+      const offenders = files.flatMap(([f, src]) => runtimeImports(src).filter((s) => /(^|\/)(gateway|identity|skills|connectors|api)(\/|$)/.test(s)).map((s) => `${f} imports ${s}`));
+      expect(offenders).toEqual([]);
+      const pure = code.get("future/progress.ts")!;
+      expect(runtimeImports(pure)).toEqual([]);
+      expect(/\b(fetch|readFile|writeFile|require|process\.|getDb|Date\.now|new Date\(\))/.test(pure)).toBe(false);
     });
 
     it("the gateway contains no write allow-list", () => {

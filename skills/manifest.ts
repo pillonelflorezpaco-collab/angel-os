@@ -2,6 +2,7 @@ import { registerAction } from "../gateway/actions/registry.js";
 import { createReminderDefinition, createTaskDefinition, taskUpdateDefinition, taskCompleteDefinition, taskCancelDefinition } from "./system/tasks.js";
 import { rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition } from "./system/memory.js";
 import { knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition } from "./system/knowledge.js";
+import { FUTURE_DEFINITIONS } from "./system/future.js";
 import { DECISION_DEFINITIONS } from "./system/decisions.js";
 import { LIFE_DEFINITIONS } from "./system/life.js";
 import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gateway/actions/verify.js";
@@ -12,7 +13,7 @@ import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gat
 // registerSkillActions() once at start-up (api/server.ts, scripts/telegram.ts,
 // scripts/worker.ts, and Jarvis Core). It is idempotent.
 
-const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition, knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition, taskUpdateDefinition, taskCompleteDefinition, taskCancelDefinition, ...LIFE_DEFINITIONS, ...DECISION_DEFINITIONS] as const;
+const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition, knowledgeIngestDefinition, knowledgeAddDefinition, knowledgeRelateDefinition, knowledgeRetractDefinition, knowledgeDeleteSourceDefinition, taskUpdateDefinition, taskCompleteDefinition, taskCancelDefinition, ...LIFE_DEFINITIONS, ...DECISION_DEFINITIONS, ...FUTURE_DEFINITIONS] as const;
 
 let registered = false;
 

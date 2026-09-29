@@ -3,6 +3,7 @@ import { search as searchMemory, describeMemory } from "../../skills/system/memo
 import { searchKnowledge, searchKnowledgeItems } from "../../skills/system/knowledge.js";
 import { queryDecisions } from "../../skills/system/decisions.js";
 import { readLifeOverview } from "../../skills/system/life.js";
+import { readFutureOverview } from "../../skills/system/future.js";
 import { listActivity } from "../../skills/system/activity.js";
 import type { KnowledgeHit } from "../../knowledge/store/index.js";
 import { assertExplicitIdentity, runWithIdentity } from "../../identity/index.js";
@@ -13,7 +14,7 @@ import type { MemoryRecord } from "../../memory/types/index.js";
 import { queryTerms, rankByTermOverlap } from "../terms.js";
 
 /** Size caps (item counts and characters). Deliberately simple limits, not model-token budgeting. */
-export const CONTEXT_LIMITS = { tasks: 10, memories: 8, knowledge: 8, decisions: 5, activity: 5, goals: 5, projects: 8, itemChars: 500, termResults: 5 } as const;
+export const CONTEXT_LIMITS = { tasks: 10, memories: 8, knowledge: 8, decisions: 5, activity: 5, goals: 5, projects: 8, aspirations: 5, itemChars: 500, termResults: 5 } as const;
 
 const clip = (s: string): string => (s.length > CONTEXT_LIMITS.itemChars ? `${s.slice(0, CONTEXT_LIMITS.itemChars)}…` : s);
 
@@ -54,7 +55,7 @@ export class DeterministicContextEngine implements ContextEngine {
 
     const perTerm = <T>(fn: (term: string) => Promise<Result>): Promise<Result[]> => Promise.all(searchTerms.map((t) => fn(t)));
 
-    const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult, lifeResult] = await Promise.all([
+    const [tasksResult, memoryResults, itemResults, docResults, decisionResults, activityResult, lifeResult, futureResult] = await Promise.all([
       listTasks({ principalId, agentKey }),
       perTerm((term) => searchMemory({ principalId, agentKey, query: { query: term, limit: L.termResults, asOf } })),
       perTerm((term) => searchKnowledgeItems(identity, { agentKey, query: term, limit: L.termResults })),
@@ -62,6 +63,7 @@ export class DeterministicContextEngine implements ContextEngine {
       terms.length ? Promise.all(terms.map((topic) => queryDecisions({ principalId, agentKey, topic }))) : Promise.resolve([] as Result[]),
       listActivity({ principalId, agentKey, range: "week", limit: L.activity }),
       readLifeOverview(identity, { agentKey }),
+      readFutureOverview(identity, { agentKey }),
     ]);
 
     const withheld: string[] = [];
@@ -138,6 +140,14 @@ export class DeterministicContextEngine implements ContextEngine {
       activeProjects = best(life.projects, (p) => p.name, L.projects).map((p) => ({ id: p.id, name: clip(p.name), status: p.status, goalId: p.goalId, tasks: { open: p.tasks.open, done: p.tasks.done } }));
     }
 
+    // ── Future Self: aspirations with evidence-only progress (null = no evidence yet) ──
+    let activeAspirations: NonNullable<ContextPackage["activeAspirations"]> = [];
+    if (settle("future", [futureResult])) {
+      const rows = futureResult.data as { id: string; title: string; current: string; desired: string; progress: number | null }[];
+      const hits = (r: { title: string; desired: string }) => terms.filter((t) => `${r.title} ${r.desired}`.toLowerCase().includes(t)).length;
+      activeAspirations = [...rows].sort((x, y) => hits(y) - hits(x)).slice(0, L.aspirations).map((r) => ({ id: r.id, title: clip(r.title), current: clip(r.current), desired: clip(r.desired), progress: r.progress }));
+    }
+
     // ── History (Activity): summaries only ──
     let recentActivity: NonNullable<ContextPackage["recentActivity"]> = [];
     if (settle("history", [activityResult])) {
@@ -151,6 +161,7 @@ export class DeterministicContextEngine implements ContextEngine {
       relevantDecisions,
       activeGoals,
       activeProjects,
+      activeAspirations,
       recentActivity,
       withheld,
       unavailable,

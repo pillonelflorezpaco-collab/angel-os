@@ -18,9 +18,9 @@ export class LifeNotFoundError extends PublicError {
 }
 export class LifeStateError extends PublicError {}
 
-export type LifeKind = "vision" | "goal" | "project" | "quest" | "person" | "task" | "knowledge" | "decision" | "memory";
+export type LifeKind = "vision" | "goal" | "project" | "quest" | "person" | "task" | "knowledge" | "decision" | "memory" | "result";
 
-const LABEL: Record<LifeKind, string> = { vision: "vision", goal: "goal", project: "project", quest: "quest", person: "person", task: "task", knowledge: "knowledge item", decision: "decision", memory: "memory" };
+const LABEL: Record<LifeKind, string> = { vision: "vision", goal: "goal", project: "project", quest: "quest", person: "person", task: "task", knowledge: "knowledge item", decision: "decision", memory: "memory", result: "result" };
 
 /** Throws LifeNotFoundError unless the row exists AND belongs to the principal. Never reveals which. */
 export async function assertOwned(principalId: string, kind: LifeKind, id: string, tx: Prisma.TransactionClient | ReturnType<typeof getDb> = getDb()): Promise<void> {
@@ -34,6 +34,7 @@ export async function assertOwned(principalId: string, kind: LifeKind, id: strin
     : kind === "person" ? await tx.person.findFirst({ where, select })
     : kind === "task" ? await tx.task.findFirst({ where, select })
     : kind === "decision" ? await tx.decision.findFirst({ where, select })
+    : kind === "result" ? await tx.result.findFirst({ where, select })
     : kind === "memory" ? await tx.memory.findFirst({ where: { ...where, status: { not: "RETRACTED" } }, select })
     : await tx.knowledgeItem.findFirst({ where: { ...where, status: "ACTIVE" }, select });
   if (!row) throw new LifeNotFoundError(LABEL[kind]);

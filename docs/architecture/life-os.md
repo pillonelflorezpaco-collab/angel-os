@@ -41,3 +41,16 @@ Decision records, Results and Reviews are BUILD #13.
 - **DB integrity:** `polymorphic_owner_guard` (evidence/result subjects), `append_only_guard` (options, evidence, results, reviews),
   a partial unique index for one chosen option, owner guards on supersession/options/evidence.
 - Known limit: Activity has a `DECISION` type only; results and reviews record none.
+
+# Future Self (BUILD #14)
+
+CURRENT → GAP → DESIRED → NEXT, in the owner's words (`Aspiration`), with evidence-only progress (`Metric`, `MetricReading`).
+- **No XP, no stored score.** Progress = `(latest − baseline) / (target − baseline)`, clamped to [0,1], computed on read by the pure `future/progress.ts`
+  (works for "lower is better" too). Latest is by observation time; a later worse reading lowers progress. With no readings progress is `null`
+  ("no evidence yet"), never 0; an aspiration's progress is the mean over metrics that HAVE evidence.
+- **No moving goalposts.** Baseline and target are fixed at creation (`metrics` is append-only; no update action; baseline ≠ target).
+- **The owner closes, not the maths.** Reaching 100% is informational (`targetReached`); ACHIEVED / RELEASED are explicit owner actions, final, one winner under races.
+- **Evidence chain.** ACTION (task/quest) → RESULT (`RESULT_RECORD`) → METRIC reading (`resultId`, owner-checked) → derived PROGRESS. Readings can't be from the future, and closed aspirations take no readings.
+- **Isolation:** store ownership checks + DB triggers (`life_owner_guard`, `append_only_guard`, terminal-state guard) as in Life OS.
+- **Skill** `system.future` (`FUTURE_READ`; ASPIRATION_CREATE/UPDATE/ACHIEVE/RELEASE, METRIC_CREATE, METRIC_READING_RECORD — all LOW; voice needs approval).
+- **Context** gets `activeAspirations` (`withheld: ["future"]` without permission).

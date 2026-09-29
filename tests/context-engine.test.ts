@@ -52,7 +52,7 @@ describe("context engine: retrieval, semantics, permissions", () => {
   const engine = new DeterministicContextEngine();
   const idA = () => identityFor(a);
   const ctxOf = (query: string, extra: Record<string, unknown> = {}, who = idA()) => engine.buildContext({ identity: who, agentKey: JARVIS_AGENT_KEY, query, ...extra });
-  const READS = [["system.tasks", "angel:tasks", "READ"], ["system.memory", "angel:memory", "MEMORY_READ"], ["system.knowledge", "angel:knowledge", "KNOWLEDGE_READ"], ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"], ["system.life", "angel:life", "LIFE_READ"]] as const;
+  const READS = [["system.tasks", "angel:tasks", "READ"], ["system.memory", "angel:memory", "MEMORY_READ"], ["system.knowledge", "angel:knowledge", "KNOWLEDGE_READ"], ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"], ["system.life", "angel:life", "LIFE_READ"], ["system.future", "angel:future", "FUTURE_READ"]] as const;
   const grantAllReads = async (p: string) => { for (const [s, r, act] of READS) await grant(p, JARVIS_AGENT_KEY, s, r, act, "READ"); };
   const mem = async (p: string, content: string, extra: Record<string, unknown> = {}) =>
     (await getDb().memory.create({ data: { principalId: p, type: "FACT", content, source: "test", ...extra } as never })).id;
@@ -156,7 +156,7 @@ describe("context engine: retrieval, semantics, permissions", () => {
         await grant(c, JARVIS_AGENT_KEY, "system.tasks", "angel:tasks", "READ", "READ");
         await getDb().memory.create({ data: { principalId: c, type: "FACT", content: "denied-ctx secret memory", source: "t" } });
         const ctx = await ctxOf("denied-ctx", {}, identityFor(c));
-        expect(ctx.withheld.sort()).toEqual(["decisions", "history", "knowledge", "life", "memories"]);
+        expect(ctx.withheld.sort()).toEqual(["decisions", "future", "history", "knowledge", "life", "memories"]);
         expect(JSON.stringify(ctx)).not.toContain("secret memory");
         const denied = (await listAuditLog(c, 50)).filter((e) => e.eventType === "ACTION_DENIED").map((e) => e.resource);
         expect(denied).toContain("angel:memory");

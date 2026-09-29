@@ -31,6 +31,10 @@ export function formatContext(ctx: ContextPackage): string {
     lines.push("Projects:");
     for (const p of ctx.activeProjects) lines.push(`• ${p.name} [${p.status.toLowerCase()}, ${p.tasks.open} open / ${p.tasks.done} done]`);
   }
+  if (ctx.activeAspirations?.length) {
+    lines.push("Aspirations:");
+    for (const a of ctx.activeAspirations) lines.push(`• ${a.title}: ${a.current} → ${a.desired} (${a.progress === null ? "no evidence yet" : `${Math.round(a.progress * 100)}% by recorded readings`})`);
+  }
   if (ctx.currentTasks.length) {
     lines.push("Open tasks:");
     for (const t of ctx.currentTasks) lines.push(`• ${t.title} [${t.status.toLowerCase().replace("_", " ")}]`);

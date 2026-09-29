@@ -59,6 +59,12 @@ async function main() {
     create: { key: "system.life", name: "System Life", description: "Vision, goals, projects, quests, people and their links." },
   });
 
+  const futureSkill = await db.skill.upsert({
+    where: { key: "system.future" },
+    update: {},
+    create: { key: "system.future", name: "System Future Self", description: "Aspirations (current, gap, desired, next) with evidence-based metrics." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -144,6 +150,13 @@ async function main() {
     { resource: "angel:life", action: "REVIEW_CREATE", category: "WRITE", state: "ALLOWED", skillId: lifeSkill.id },
     { resource: "angel:decisions", action: "DECISION_RECORD", category: "WRITE", state: "ALLOWED", skillId: decisionsSkill.id },
     { resource: "angel:decisions", action: "DECISION_REVIEW", category: "WRITE", state: "ALLOWED", skillId: decisionsSkill.id },
+    { resource: "angel:future", action: "FUTURE_READ", category: "READ", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "ASPIRATION_CREATE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "ASPIRATION_UPDATE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "ASPIRATION_ACHIEVE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "ASPIRATION_RELEASE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "METRIC_CREATE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "METRIC_READING_RECORD", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",

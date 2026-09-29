@@ -44,6 +44,7 @@ model Principal {
   visions            Vision[]
   quests             Quest[]
   results            Result[]
+  aspirations        Aspiration[]
   reviews            Review[]
 
   @@map("principals")
@@ -993,4 +994,75 @@ model Review {
 
   @@index([principalId, periodEnd])
   @@map("reviews")
+}
+
+// ── Future Self (BUILD #14) ───────────────────────────────────────────────
+// CURRENT → GAP → DESIRED → NEXT, all in the owner's words. Progress is never a stored score or XP:
+// it is computed on read from owner-set metric baseline/target and recorded readings, and "no
+// readings" reads as "no evidence yet". Reaching 100% never closes an aspiration; the owner does.
+
+enum AspirationStatus {
+  ACTIVE
+  ACHIEVED
+  RELEASED // deliberately let go
+}
+
+model Aspiration {
+  id          String           @id @default(uuid())
+  principalId String
+  principal   Principal        @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title       String
+  area        String? // free tag, e.g. "health"
+  current     String // where I am, in my words
+  gap         String? // what is missing, in my words
+  desired     String // who/where I want to be
+  goalId      String?
+  nextTaskId  String? // the concrete NEXT step
+  nextQuestId String?
+  status      AspirationStatus @default(ACTIVE)
+  closedAt    DateTime?
+  closedNote  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  metrics Metric[]
+
+  @@index([principalId, status])
+  @@map("aspirations")
+}
+
+// Set once. Baseline and target are never edited afterwards, so progress cannot be gamed by moving the goalposts.
+model Metric {
+  id           String     @id @default(uuid())
+  principalId  String
+  aspirationId String
+  aspiration   Aspiration @relation(fields: [aspirationId], references: [id], onDelete: Cascade)
+  name         String
+  unit         String
+  baseline     Float
+  target       Float
+  createdAt    DateTime   @default(now())
+
+  readings MetricReading[]
+
+  @@index([aspirationId])
+  @@index([principalId])
+  @@map("metrics")
+}
+
+// Append-only. Optionally backed by a Result (the evidence the reading came from).
+model MetricReading {
+  id          String   @id @default(uuid())
+  principalId String
+  metricId    String
+  metric      Metric   @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  value       Float
+  observedAt  DateTime
+  resultId    String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([metricId, observedAt])
+  @@index([principalId])
+  @@map("metric_readings")
 }

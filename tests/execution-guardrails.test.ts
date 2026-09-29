@@ -110,6 +110,12 @@ describe("gatewayExecute guardrail (legacy path is READ-only)", () => {
 
   it("every production write is a registered ActionDefinition", () => {
     expect([...PRODUCTION_ACTIONS].sort()).toEqual([
+      "system.future|ASPIRATION_ACHIEVE",
+      "system.future|ASPIRATION_CREATE",
+      "system.future|ASPIRATION_RELEASE",
+      "system.future|ASPIRATION_UPDATE",
+      "system.future|METRIC_CREATE",
+      "system.future|METRIC_READING_RECORD",
       "system.knowledge|KNOWLEDGE_ADD",
       "system.knowledge|KNOWLEDGE_DELETE_SOURCE",
       "system.knowledge|KNOWLEDGE_INGEST",
