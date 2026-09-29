@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -162,8 +162,111 @@ describe("Life rules (step 2)", () => {
   });
 });
 
+describe("Decision rules (step 3)", () => {
+  const NOW = Date.parse("2026-06-01T00:00:00Z");
+  it("status: superseded beats reviewed beats due beats waiting; a list row can never claim 'superseded'", () => {
+    expect(decisionStatus({ supersededBy: { id: "x" }, reviewedAt: "2026-01-01" }, NOW).kind).toBe("superseded");
+    expect(decisionStatus({ reviewedAt: "2026-01-01T00:00:00Z", reviewAt: "2020-01-01" }, NOW).kind).toBe("reviewed");
+    expect(decisionStatus({ reviewAt: "2026-05-31T00:00:00Z" }, NOW)).toEqual({ kind: "due", label: "Time to look back" });
+    expect(decisionStatus({ reviewAt: "2026-06-01T00:00:00Z" }, NOW).kind).toBe("due"); // exactly now counts as due
+    expect(decisionStatus({ reviewAt: "2026-09-15T12:00:00Z" }, NOW)).toMatchObject({ kind: "waiting" });
+    expect(decisionStatus({ reviewAt: "2026-09-15T12:00:00Z" }, NOW).label).toMatch(/2026/);
+    expect(decisionStatus({}, NOW)).toEqual({ kind: "recorded", label: "Recorded" });
+    expect(decisionStatus({ supersededBy: null, reviewedAt: null, reviewAt: null }, NOW).kind).toBe("recorded");
+  });
+
+  it("a decision can be superseded once and reviewed once — never edited", () => {
+    expect(canSupersede({})).toBe(true);
+    expect(canSupersede({ supersededBy: { id: "n" } })).toBe(false);
+    expect(canReview({})).toBe(true);
+    expect(canReview({ reviewedAt: "2026-01-01" })).toBe(false);
+  });
+
+  it("the record form becomes a DECISION_RECORD body, trimmed, empties absent, dates converted, nothing invented", () => {
+    const r = buildDecisionBody({ title: "  Adopt a cockpit ", decision: "Build it", question: "", reasoning: "It saves time", expected: "faster reviews", reviewAt: "2026-09-01" });
+    expect(r.errors).toEqual([]);
+    expect(r.body).toEqual({ title: "Adopt a cockpit", decision: "Build it", reasoning: "It saves time", expected: "faster reviews", reviewAt: "2026-09-01T12:00:00.000Z" });
+    expect(Object.keys(r.body)).not.toEqual(expect.arrayContaining(["principalId", "status", "outcome", "reviewedAt"]));
+  });
+
+  it("required words and impossible dates are reported before anything is sent", () => {
+    expect(buildDecisionBody({}).errors).toEqual(["A title is needed.", "What did you decide?"]);
+    expect(buildDecisionBody({ title: "t", decision: "d", reviewAt: "2026-02-31" }).errors).toEqual(["reviewAt isn't a valid date"]);
+  });
+
+  it("options: 2–6 or none; the chosen one is re-mapped past blank rows; choosing needs options", () => {
+    const opts = [{ label: "Keep" }, { label: "  " }, { label: "Stop", pros: "sleep", cons: "headaches" }];
+    const r = buildDecisionBody({ title: "t", decision: "d" }, opts, 2);
+    expect(r.errors).toEqual([]);
+    expect(r.body.options).toEqual([{ label: "Keep" }, { label: "Stop", pros: "sleep", cons: "headaches" }]);
+    expect(r.body.chosenIndex).toBe(1); // row 2 in the form was blank, so "Stop" is option index 1
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [{ label: "Only one" }], 0).errors).toEqual(["Give at least 2 options, or none."]);
+    expect(buildDecisionBody({ title: "t", decision: "d" }, Array.from({ length: 7 }, (_, i) => ({ label: `o${i}` }))).errors).toEqual(["At most 6 options."]);
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [{ label: "a" }, { label: "b" }], 5).errors).toEqual(["The chosen option must have a label."]);
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [{ label: "a" }, { label: " " }], 1).errors).toEqual(["Give at least 2 options, or none.", "The chosen option must have a label."]);
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [], 0).errors).toEqual(["Choose among options you have listed."]);
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [{ label: "a" }, { label: "b" }]).body).not.toHaveProperty("chosenIndex");
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [], null).body).not.toHaveProperty("options");
+    expect(LIMITS.options).toEqual({ min: 2, max: 6 });
+  });
+
+  it("evidence: notes carry text, references carry only an id (the server writes the label); blanks are dropped; capped at 10", () => {
+    const r = buildDecisionBody({ title: "t", decision: "d" }, [], null, [
+      { kind: "NOTE", note: "  read an article " }, { kind: "NOTE", note: "  " }, { kind: "MEMORY", refId: "m1", note: "ignored" }, { kind: "TASK", refId: "t1" }, { kind: "KNOWLEDGE" },
+    ]);
+    expect(r.body.evidence).toEqual([{ kind: "NOTE", note: "read an article" }, { kind: "MEMORY", refId: "m1" }, { kind: "TASK", refId: "t1" }]);
+    expect(JSON.stringify(r.body.evidence)).not.toContain("label"); // a client-supplied label would be refused by the API
+    const many = Array.from({ length: 11 }, (_, i) => ({ kind: "TASK", refId: `t${i}` }));
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [], null, many).errors).toEqual(["At most 10 pieces of evidence."]);
+  });
+
+  it("changing your mind records a NEW decision that names the old one", () => {
+    expect(buildDecisionBody({ title: "t", decision: "d" }, [], null, [], "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e").body.supersedesId).toBe("0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e");
+    expect(buildDecisionBody({ title: "t", decision: "d" }).body).not.toHaveProperty("supersedesId");
+  });
+
+  it("evidence tags say what a reference is; results show a measurement only with both value and unit; picker rows are plain text", () => {
+    expect([evidenceTag("MEMORY"), evidenceTag("KNOWLEDGE"), evidenceTag("TASK"), evidenceTag("NOTE")]).toEqual(["memory", "knowledge", "task", "note"]);
+    expect(resultLine({ statement: "Reviews were faster", value: 12.5, unit: "min" })).toBe("Reviews were faster — 12.5 min");
+    expect(resultLine({ statement: "It worked", value: 0, unit: "errors" })).toBe("It worked — 0 errors"); // zero is a real measurement
+    expect(resultLine({ statement: "It worked", value: 5, unit: null })).toBe("It worked");
+    expect(resultLine({ statement: "It worked" })).toBe("It worked");
+    expect(pickerRow("MEMORY", { id: "m", type: "INFERENCE", confirmed: false, content: "likes tea" })).toEqual({ refId: "m", title: "likes tea", sub: "Jarvis thinks (unconfirmed)" });
+    expect(pickerRow("KNOWLEDGE", { id: "k", title: "Spaced repetition", kind: "METHOD" })).toEqual({ refId: "k", title: "Spaced repetition", sub: "method" });
+    expect(pickerRow("TASK", { id: "t", title: "Try decaf", status: "IN_PROGRESS" })).toEqual({ refId: "t", title: "Try decaf", sub: "in progress" });
+  });
+
+  it("a replaced decision is marked replaced (the newer one names it), so it is never offered as 'time to look back'", () => {
+    const list = [{ id: "new", supersedesId: "old", reviewAt: "2020-01-01" }, { id: "old", reviewAt: "2020-01-01" }, { id: "alone", reviewAt: "2020-01-01" }];
+    const marked = withSuperseded(list);
+    expect(marked.find((d) => d.id === "old")!.supersededBy).toEqual({ id: "new" });
+    expect(marked.find((d) => d.id === "new")!.supersededBy).toBeNull();
+    expect(decisionStatus(marked.find((d) => d.id === "old"), NOW).kind).toBe("superseded");
+    expect(decisionStatus(marked.find((d) => d.id === "alone"), NOW).kind).toBe("due");
+    expect(withSuperseded(undefined)).toEqual([]);
+  });
+
+  it("results about a decision: a statement, and a measurement only as value AND unit; zero is a real value", () => {
+    expect(buildResultBody({ statement: "  Reviews got faster ", value: "12.5", unit: " min " }, "d1")).toEqual({ body: { subjectKind: "DECISION", subjectId: "d1", statement: "Reviews got faster", value: 12.5, unit: "min" }, errors: [] });
+    expect(buildResultBody({ statement: "None broke", value: "0", unit: "errors" }, "d1").body.value).toBe(0);
+    expect(buildResultBody({ statement: "It worked", value: "", unit: "" }, "d1")).toEqual({ body: { subjectKind: "DECISION", subjectId: "d1", statement: "It worked" }, errors: [] });
+    expect(buildResultBody({ statement: "x", value: "5", unit: "" }, "d1").errors).toEqual(["A measurement needs both a value and a unit."]);
+    expect(buildResultBody({ statement: "x", value: "", unit: "km" }, "d1").errors).toEqual(["A measurement needs both a value and a unit."]);
+    expect(buildResultBody({ statement: "x", value: "abc", unit: "km" }, "d1").errors).toEqual(["The value must be a number."]);
+    expect(buildResultBody({ statement: "x", value: "Infinity", unit: "km" }, "d1").errors).toEqual(["The value must be a number."]);
+    expect(buildResultBody({ statement: " ", value: "", unit: "" }, "d1").errors).toEqual(["Say what happened."]);
+  });
+
+  it("routes: #/decisions and #/decisions/<uuid> only", () => {
+    const id = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+    expect(parseRoute("#/decisions")).toEqual({ view: "decisions" });
+    expect(parseRoute(`#/decisions/${id}`)).toEqual({ view: "decision", id });
+    for (const bad of ["#/decisions/", "#/decisions/nope", `#/decisions/${id}/x`, `#/decisions/${id.toUpperCase()}`, "#/decision"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+  });
+});
+
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "life.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -210,14 +313,30 @@ describe("frontend safety (static checks)", () => {
     for (const t of taskTransitions("TODO")) expect(matchRule("POST", `/api/actions/system.tasks/${t.action}`), t.action).toBeDefined();
     expect(matchRule("POST", "/api/actions/system.life/PROJECT_SET_STATUS")).toBeDefined();
   });
+  it("EVERY '/api/…' string in the UI (even ones assigned to variables) is a route the proxy allows", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    const UUID = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+    const literals = [...joined.matchAll(/[`"](\/api\/[^`"]*)[`"]/g)].map((m) => m[1]);
+    expect(literals.length).toBeGreaterThan(20);
+    for (const raw of literals) {
+      if (raw.includes("${skill}/${name}")) continue; // generic act(): each call site is checked by its pair
+      const p = raw.split("?")[0].replace("${decision}", "approve").replace(/\$\{[^}]+\}/g, UUID);
+      expect(["GET", "POST"].some((m) => matchRule(m, p)), raw).toBe(true);
+    }
+    for (const needed of ["/api/memory/search", "/api/knowledge/search", "/api/tasks", "/api/results", "/api/decisions"]) expect(literals.some((l) => l.startsWith(needed)), needed).toBe(true);
+  });
+
   it("closed items never get an edit or reopen control: the only writers offered for a terminal state come from the transition tables, which are empty for them", () => {
     for (const [kind, st, fn] of [["quest", "COMPLETED", questTransitions], ["quest", "ABANDONED", questTransitions], ["task", "DONE", taskTransitions], ["task", "CANCELLED", taskTransitions], ["project", "ARCHIVED", projectTransitions]] as const) {
       expect(isTerminal(kind, st)).toBe(true);
       expect((fn as (s: string) => unknown[])(st), `${kind} ${st}`).toEqual([]);
     }
     expect(read("life.js")).not.toMatch(/GOAL_REOPEN|QUEST_REOPEN|TASK_REOPEN|VISION_REOPEN/);
+    // decisions are history: no update/edit/delete of a decision exists anywhere in the UI
+    expect(read("decisions.js")).not.toMatch(/DECISION_UPDATE|DECISION_EDIT|DECISION_DELETE|DECISION_REOPEN/);
+    expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "index.html", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "decisions.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
   });
 });

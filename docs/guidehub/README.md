@@ -1,4 +1,4 @@
-# GuideHub cockpit — running it (steps 1–2)
+# GuideHub cockpit — running it (steps 1–3)
 
 **Step 1** (`cockpit-design.md` §9): sign-in + session, the Today briefing, Ask Jarvis, approvals, and three inline actions (complete a task, look back on a decision, review a recall card).
 **Step 2 — Life:** `#/life` (visions, goals, projects with plain task counts, open quests, people, and a read-only **History** of everything closed) and `#/life/projects/<id>`
@@ -8,6 +8,13 @@ Life rules the UI enforces (and tests pin): closing something (achieve, abandon,
 a quest must be started before it can be completed and its "done when" is required; **closed items are read-only** (no reopen control exists — the API has none); only transitions the API
 allows are offered (the server stays the authority); deleting a person is a **request** — the screen says "Sent for your approval — nothing has changed yet", the approvals badge in the header
 updates at once, and the person stays until you approve it on Today. Dates are calendar dates stored as noon UTC so the same date shows everywhere.
+
+**Step 3 — Decisions:** `#/decisions` (what is due for a look-back, everything else, and a record form) and `#/decisions/<id>`.
+- **History, not a form to edit.** A decision is recorded once with its question, 2–6 options (one chosen), reasoning, an *expectation* and a look-back date. There is no edit control anywhere (a test forbids one). To change your mind you record a NEW decision that replaces the old one; the old one stays exactly as written, shows "Replaced by…", and can't be replaced twice.
+- **Evidence is a pointer, not proof.** Attach a note, or reference one of your own memories, knowledge items or tasks through read-only pickers; the UI never sends a label — the server writes the snapshot from your own row, so a guess (inference) does not become a fact by being cited.
+- **The look-back is once, and never graded.** What you expected sits next to what happened; the lesson is optional; afterwards the page says "This is final". Nothing on the page scores or judges the outcome.
+- **Results** about a decision are append-only notes; a measurement needs both a value and a unit (zero is a real value).
+- A due-for-review decision that was already replaced is never offered as "time to look back" (the list marks it from the newer decision that names it).
 
 ## What it is
 
@@ -21,7 +28,7 @@ browser ──(session cookie)──▶ guidehub/server.ts ──(cockpit's own 
 - It imports **nothing** from the backend and has no database: it is a pure HTTP client of the API (`docs/api/README.md`). A boundary test enforces this.
 - The API token lives **only on the server**. The browser holds an opaque, HttpOnly, SameSite=Strict session cookie (server-side session, real logout, 12 h absolute / 2 h idle).
 - The proxy is **default-deny** (`guidehub/proxy.ts`): only the allow-listed method+path pairs reach the API — `me`, `context`, `approvals` (+ approve/deny with an empty body),
-  `jarvis`, `decisions`, `learning/due`, the Life reads (`life/overview|history|people|projects/:id`), and 23 named actions (3 inline + Life). Grow the list one screen at a time; a test pins the exact list.
+  `jarvis`, `decisions`, `learning/due`, the Life reads (`life/overview|history|people|projects/:id`), the Decisions reads (`decisions/:id`, `results`, and read-only `memory/search`, `knowledge/search`, `tasks` pickers), and 25 named actions. Grow the list one screen at a time; a test pins the exact 19 rules.
 
 ## Configure and run
 
@@ -57,9 +64,9 @@ State-changing requests need the `X-Requested-With: guidehub-cockpit` header and
 
 - `tests/guidehub-bff.test.ts` — config, hashing, sessions, throttle, cookie flags, CSRF/origin, the exact proxy allow-list (default deny), header hygiene.
 - `tests/guidehub-ui.test.ts` — the design's rules as pure functions (outcomes, "No evidence yet", allowed transitions, terminal states, form→body, routes) + static safety checks across every frontend module (text-only rendering, one fetch wrapper, every call is an allowed route).
-- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (42 checks: sign-in, Today, the whole Life journey, phone width, dark mode; screenshots). Header lists the environment variables.
+- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (60 checks: sign-in, Today, the whole Life and Decisions journeys, phone width, dark mode; screenshots). Header lists the environment variables.
 
 ## Known limits (step 1)
 
-Single owner, one cookie session store in memory (a restart signs everyone out); no in-app token management; no offline mode; visions and quests can be created/closed but not edited (the proxy does not allow `VISION_UPDATE`/`QUEST_UPDATE` yet); knowledge links on a project are shown but not editable (Knowledge screen comes later); forms for later screens are not built; the briefing shows what
+Single owner, one cookie session store in memory (a restart signs everyone out); no in-app token management; no offline mode; reviews (periodic look-backs) are not in the cockpit yet; visions and quests can be created/closed but not edited (the proxy does not allow `VISION_UPDATE`/`QUEST_UPDATE` yet); knowledge links on a project are shown but not editable (Knowledge screen comes later); forms for later screens are not built; the briefing shows what
 `GET /api/context` returns (a focus box narrows it). See `cockpit-design.md` §8 for backend gaps that would help later steps.

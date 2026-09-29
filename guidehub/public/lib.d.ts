@@ -23,4 +23,15 @@ export function buildBody(values: Record<string, unknown>, dateFields?: string[]
 export function taskCountsLine(c: { open?: number; done?: number; cancelled?: number } | undefined): string;
 export function lifeOutcome(httpStatus: number, body: any): Outcome;
 export function linkablePeople(all?: any[], linked?: any[]): any[];
-export function parseRoute(hash: string): { view: "today" | "life" | "project"; id?: string };
+export function parseRoute(hash: string): { view: "today" | "life" | "project" | "decisions" | "decision"; id?: string };
+export const LIMITS: { options: { min: number; max: number }; evidence: number };
+export const EVIDENCE_KINDS: { value: string; label: string }[];
+export function decisionStatus(d: any, nowMs: number): { kind: "superseded" | "reviewed" | "due" | "waiting" | "recorded"; label: string };
+export function canSupersede(d: any): boolean;
+export function canReview(d: any): boolean;
+export function buildDecisionBody(values: Record<string, unknown>, options?: { label?: string; pros?: string; cons?: string }[], chosen?: number | null, evidence?: { kind: string; refId?: string; note?: string }[], supersedesId?: string | null): { body: Record<string, unknown>; errors: string[] };
+export function evidenceTag(kind: string): string;
+export function resultLine(r: { statement: string; value?: number | null; unit?: string | null }): string;
+export function pickerRow(kind: string, hit: any): { refId: string; title: string; sub: string };
+export function withSuperseded(list: any[] | undefined): any[];
+export function buildResultBody(values: Record<string, any>, subjectId: string): { body: Record<string, unknown>; errors: string[] };

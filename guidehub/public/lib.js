@@ -183,12 +183,115 @@ export function linkablePeople(all, linked) {
   return (all ?? []).filter((p) => !taken.has(p.id));
 }
 
-/** Hash routes: #/today, #/life, #/life/projects/<uuid>. Anything else falls back to Today. */
+/** Hash routes: #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
 export function parseRoute(hash) {
   const h = String(hash ?? "").replace(/^#\/?/, "");
   if (h === "" || h === "today") return { view: "today" };
   if (h === "life") return { view: "life" };
   const m = /^life\/projects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
   if (m) return { view: "project", id: m[1] };
+  if (h === "decisions") return { view: "decisions" };
+  const d = /^decisions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
+  if (d) return { view: "decision", id: d[1] };
   return { view: "today" };
+}
+
+// ── Step 3: Decisions ──────────────────────────────────────────────────────
+// A decision is HISTORY: recorded once, never edited. Changing your mind records a NEW decision that supersedes the old one (which can be
+// superseded once). The look-back (outcome + lesson) is filled in exactly once and is never graded — expected and actual sit side by side.
+
+export const LIMITS = { options: { min: 2, max: 6 }, evidence: 10 };
+export const EVIDENCE_KINDS = [{ value: "NOTE", label: "A note" }, { value: "MEMORY", label: "A memory" }, { value: "KNOWLEDGE", label: "Knowledge" }, { value: "TASK", label: "A task" }];
+
+/** Where a decision stands. `supersededBy` is only present on the detail read; a list row cannot know it. */
+export function decisionStatus(d, nowMs) {
+  if (d.supersededBy) return { kind: "superseded", label: "Replaced by a newer decision" };
+  if (d.reviewedAt) return { kind: "reviewed", label: "Looked back on" };
+  if (d.reviewAt && new Date(d.reviewAt).getTime() <= nowMs) return { kind: "due", label: "Time to look back" };
+  if (d.reviewAt) return { kind: "waiting", label: `Look back on ${formatDateOnly(d.reviewAt)}` };
+  return { kind: "recorded", label: "Recorded" };
+}
+
+/** A decision can be replaced only if it has not been already. Reviewing is allowed once, at any time before it is done. */
+export const canSupersede = (d) => !d.supersededBy;
+export const canReview = (d) => !d.reviewedAt;
+
+/**
+ * Form state → DECISION_RECORD body, with the same rules the server enforces (so the user sees them before sending; the server still decides).
+ * options: [{label,pros,cons}], chosen: index or null, evidence: [{kind, refId?, note?}].
+ * Never adds anything of its own: no principal, no status, no labels for evidence (the server snapshots those from the owner's own rows).
+ */
+export function buildDecisionBody(values, options = [], chosen = null, evidence = [], supersedesId = null) {
+  const errors = [];
+  const { body, invalid } = buildBody(values, ["reviewAt"]);
+  for (const f of invalid) errors.push(`${f} isn't a valid date`);
+  if (!body.title) errors.push("A title is needed.");
+  if (!body.decision) errors.push("What did you decide?");
+  const opts = options
+    .map((o) => buildBody({ label: o.label, pros: o.pros, cons: o.cons }).body)
+    .filter((o) => o.label);
+  if (opts.length > 0) {
+    if (opts.length < LIMITS.options.min) errors.push(`Give at least ${LIMITS.options.min} options, or none.`);
+    if (opts.length > LIMITS.options.max) errors.push(`At most ${LIMITS.options.max} options.`);
+    if (chosen !== null && chosen !== undefined) {
+      // `chosen` indexes the ORIGINAL rows; re-map it onto the filtered list so an empty row above it cannot shift the choice.
+      const original = options[chosen];
+      const idx = original ? opts.findIndex((o) => o.label === buildBody({ label: original.label }).body.label) : -1;
+      if (idx < 0) errors.push("The chosen option must have a label.");
+      else body.chosenIndex = idx;
+    }
+    body.options = opts;
+  } else if (chosen !== null && chosen !== undefined) errors.push("Choose among options you have listed.");
+  const ev = [];
+  for (const e of evidence) {
+    if (e.kind === "NOTE") { const n = (e.note ?? "").trim(); if (n) ev.push({ kind: "NOTE", note: n }); }
+    else if (e.refId) ev.push({ kind: e.kind, refId: e.refId });
+  }
+  if (ev.length > LIMITS.evidence) errors.push(`At most ${LIMITS.evidence} pieces of evidence.`);
+  if (ev.length) body.evidence = ev;
+  if (supersedesId) body.supersedesId = supersedesId;
+  return { body, errors };
+}
+
+/** Evidence labels are the server's snapshots; the kind tells how far to trust them (a reference is not an upgrade). */
+export function evidenceTag(kind) {
+  return { MEMORY: "memory", KNOWLEDGE: "knowledge", TASK: "task", NOTE: "note" }[kind] ?? String(kind).toLowerCase();
+}
+
+/** Result measurement text — both value and unit, or neither. */
+export function resultLine(r) {
+  const m = r.value !== null && r.value !== undefined && r.unit ? ` — ${r.value} ${r.unit}` : "";
+  return `${r.statement}${m}`;
+}
+
+/** A search hit → a picker row, whatever the source. Only fields the picker needs; never HTML. */
+export function pickerRow(kind, hit) {
+  if (kind === "MEMORY") return { refId: hit.id, title: hit.content, sub: memoryLine({ ...hit, confirmed: hit.confirmed ?? hit.status === "ACTIVE" }).label };
+  if (kind === "KNOWLEDGE") return { refId: hit.id, title: hit.title, sub: hit.kind ? String(hit.kind).toLowerCase() : "knowledge" };
+  return { refId: hit.id, title: hit.title, sub: statusLabel(hit.status) };
+}
+
+/**
+ * A list row cannot say whether a NEWER decision replaced it, but the newer one names it (`supersedesId`). Marks the replaced ones,
+ * so a superseded decision is never presented as "time to look back". Only sees the rows it is given (the API returns the latest 100).
+ */
+export function withSuperseded(list) {
+  const replaced = new Map((list ?? []).filter((d) => d.supersedesId).map((d) => [d.supersedesId, d.id]));
+  return (list ?? []).map((d) => ({ ...d, supersededBy: replaced.has(d.id) ? { id: replaced.get(d.id) } : null }));
+}
+
+/** A result about one decision: a statement, and a measurement only as a value AND a unit together. */
+export function buildResultBody(values, subjectId) {
+  const { body } = buildBody({ statement: values.statement, unit: values.unit });
+  const errors = [];
+  if (!body.statement) errors.push("Say what happened.");
+  const rawValue = typeof values.value === "string" ? values.value.trim() : values.value;
+  const hasValue = rawValue !== undefined && rawValue !== null && rawValue !== "";
+  if (hasValue) {
+    const n = Number(rawValue);
+    if (!Number.isFinite(n)) errors.push("The value must be a number.");
+    else body.value = n;
+  }
+  if (hasValue !== Boolean(body.unit)) errors.push("A measurement needs both a value and a unit.");
+  return { body: { subjectKind: "DECISION", subjectId, ...body }, errors };
 }

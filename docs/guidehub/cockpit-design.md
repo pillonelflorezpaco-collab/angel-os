@@ -1,6 +1,6 @@
 # GuideHub cockpit — design (v1, no code)
 
-Status: **steps 1 and 2 are built** (see `README.md`: sign-in/session BFF, Today, Ask Jarvis, Approvals, inline actions, and the Life screens); steps 3–5 are still design only. This document turns the finished Angel OS backend (API v2) into a product design, and records the
+Status: **steps 1–3 are built** (see `README.md`: sign-in/session BFF, Today, Ask Jarvis, Approvals, inline actions, the Life screens, and Decisions with results); reviews and steps 4–5 are still design only. This document turns the finished Angel OS backend (API v2) into a product design, and records the
 rules a UI must follow so it cannot undermine the guarantees the backend enforces. The UI is a **client of `docs/api/README.md`** — it adds no backend behaviour.
 
 ## 1. Principles (the cockpit's non-negotiables)

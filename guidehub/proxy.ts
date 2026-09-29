@@ -9,8 +9,8 @@ const actions = (skill: string, names: string[]): Rule => ({ method: "POST", pat
 
 /**
  * Grown one screen at a time, each entry with a test. Step 1: Today briefing, Ask Jarvis, approvals, three inline actions.
- * Step 2: Life (visions, goals, projects, quests, tasks, people). Anything not listed — reminders, memory, knowledge, audit, results,
- * reviews, the other domains — is unreachable from the cockpit until its screen ships.
+ * Step 2: Life (visions, goals, projects, quests, tasks, people). Step 3: Decisions (+ results, and read-only pickers for evidence).
+ * Anything not listed — reminders, memory/knowledge writes, audit, reviews, the other domains — is unreachable from the cockpit until its screen ships.
  */
 export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/me$/ },
@@ -21,7 +21,7 @@ export const ALLOWED: Rule[] = [
   { method: "POST", path: /^\/api\/jarvis$/ },
   { method: "GET", path: /^\/api\/decisions$/ },
   { method: "GET", path: /^\/api\/learning\/due$/ },
-  actions("system.decisions", ["DECISION_REVIEW"]),
+  actions("system.decisions", ["DECISION_RECORD", "DECISION_REVIEW"]),
   actions("system.learning", ["CARD_REVIEW"]),
   // ── Step 2: Life ──
   { method: "GET", path: /^\/api\/life\/(overview|history|people)$/ },
@@ -34,6 +34,12 @@ export const ALLOWED: Rule[] = [
     "PERSON_CREATE", "PERSON_UPDATE", "PERSON_DELETE",
   ]),
   actions("system.tasks", ["CREATE_TASK", "TASK_COMPLETE", "TASK_CANCEL"]),
+  // ── Step 3: Decisions (record, look back, results). The three searches are read-only pickers for evidence. ──
+  { method: "GET", path: new RegExp(`^/api/decisions/${UUID}$`) },
+  { method: "GET", path: /^\/api\/results$/ },
+  { method: "GET", path: /^\/api\/(memory|knowledge)\/search$/ },
+  { method: "GET", path: /^\/api\/tasks$/ },
+  actions("system.life", ["RESULT_RECORD"]),
 ];
 
 export function matchRule(method: string, path: string): Rule | undefined {
