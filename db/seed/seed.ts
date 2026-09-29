@@ -101,6 +101,7 @@ async function main() {
     { resource: "angel:memory", action: "MEMORY_UPDATE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
     { resource: "angel:memory", action: "MEMORY_CONFIRM", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
     { resource: "angel:memory", action: "MEMORY_DELETE", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
+    { resource: "angel:memory", action: "MEMORY_RETRACT", category: "WRITE", state: "APPROVAL_REQUIRED", skillId: memorySkill.id },
     { resource: "angel:knowledge", action: "KNOWLEDGE_READ", category: "READ", state: "ALLOWED", skillId: knowledgeSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {

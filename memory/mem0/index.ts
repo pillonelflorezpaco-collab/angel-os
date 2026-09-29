@@ -30,6 +30,15 @@ export class Mem0MemoryProviderNotConfigured implements MemoryProvider {
   async updateMemory(_principalId: string, _id: string): Promise<never> {
     throw new Error(this.reason);
   }
+  async getMemory(): Promise<never> {
+    throw new Error(this.reason);
+  }
+  async listRevisions(): Promise<never> {
+    throw new Error(this.reason);
+  }
+  async retractMemory(): Promise<never> {
+    throw new Error(this.reason);
+  }
   async deleteMemory(_principalId: string, _id: string): Promise<never> {
     throw new Error(this.reason);
   }

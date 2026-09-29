@@ -22,21 +22,22 @@ model Principal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  people      Person[]
-  projects    Project[]
-  tasks       Task[]
-  reminders   Reminder[]
-  goals       Goal[]
-  decisions   Decision[]
-  memories    Memory[]
-  permissions Permission[]
-  approvals   ApprovalRequest[]
-  auditLogs   AuditLog[]
-  connections Connection[]
-  oauthStates OAuthState[]
+  people             Person[]
+  projects           Project[]
+  tasks              Task[]
+  reminders          Reminder[]
+  goals              Goal[]
+  decisions          Decision[]
+  memories           Memory[]
+  permissions        Permission[]
+  approvals          ApprovalRequest[]
+  auditLogs          AuditLog[]
+  connections        Connection[]
+  oauthStates        OAuthState[]
   apiTokens          ApiToken[]
   externalIdentities ExternalIdentity[]
   activities         Activity[]
+  memoryRevisions    MemoryRevision[]
 
   @@map("principals")
 }
@@ -45,14 +46,14 @@ model Principal {
 
 // People Angel knows — NOT employees, NOT agency staff.
 model Person {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   principalId  String
   principal    Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
   name         String
-  relationship String?  // e.g. "friend", "sister", "colleague at X" — free text, not a role/org concept
+  relationship String? // e.g. "friend", "sister", "colleague at X" — free text, not a role/org concept
   notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tasks Task[]
 
@@ -92,19 +93,19 @@ enum TaskStatus {
 }
 
 model Task {
-  id          String     @id @default(uuid())
-  principalId String
-  principal   Principal  @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id              String     @id @default(uuid())
+  principalId     String
+  principal       Principal  @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
   relatedPersonId String?
-  relatedPerson   Person? @relation(fields: [relatedPersonId], references: [id], onDelete: SetNull)
-  title       String
-  description String?
-  status      TaskStatus @default(TODO)
-  dueAt       DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  relatedPerson   Person?    @relation(fields: [relatedPersonId], references: [id], onDelete: SetNull)
+  title           String
+  description     String?
+  status          TaskStatus @default(TODO)
+  dueAt           DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   reminders Reminder[]
 
@@ -114,11 +115,11 @@ model Task {
 }
 
 enum ReminderStatus {
-  PENDING      // waiting for remindAt (or for a retry after a definite delivery failure)
-  CLAIMED      // a worker holds the lease and is delivering it
-  SENT         // delivered — the channel confirmed acceptance
-  FAILED       // gave up: non-retryable failure or attempts exhausted
-  UNCONFIRMED  // a send was attempted but its outcome is unknown; never re-sent automatically
+  PENDING // waiting for remindAt (or for a retry after a definite delivery failure)
+  CLAIMED // a worker holds the lease and is delivering it
+  SENT // delivered — the channel confirmed acceptance
+  FAILED // gave up: non-retryable failure or attempts exhausted
+  UNCONFIRMED // a send was attempted but its outcome is unknown; never re-sent automatically
   DISMISSED
 }
 
@@ -136,14 +137,14 @@ model Reminder {
 
   // Delivery lifecycle (see docs/architecture/reminders-and-delivery.md).
   claimedAt         DateTime?
-  leaseUntil        DateTime?   // a CLAIMED row whose lease has passed is recoverable
-  deliveryAttempts  Int         @default(0)  // also the fence token for the current claim
+  leaseUntil        DateTime? // a CLAIMED row whose lease has passed is recoverable
+  deliveryAttempts  Int       @default(0) // also the fence token for the current claim
   lastAttemptAt     DateTime?
-  sendStartedAt     DateTime?   // set immediately before the channel call: after this, a crash means "unknown"
-  nextAttemptAt     DateTime?   // backoff after a retryable failure
+  sendStartedAt     DateTime? // set immediately before the channel call: after this, a crash means "unknown"
+  nextAttemptAt     DateTime? // backoff after a retryable failure
   deliveredAt       DateTime?
   deliveryChannel   String?
-  lastDeliveryError String?     // a short safe code, never provider text
+  lastDeliveryError String? // a short safe code, never provider text
 
   @@index([principalId])
   @@index([remindAt])
@@ -182,18 +183,18 @@ model Goal {
 // never rewritten, only ever superseded by a new row referencing it, so
 // "what did I decide about X" stays answerable from a stable log.
 model Decision {
-  id            String    @id @default(uuid())
-  principalId   String
-  principal     Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  projectId     String?
-  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  title         String
-  context       String?
-  decision      String
-  supersedesId  String?   @unique
-  supersedes    Decision? @relation("DecisionHistory", fields: [supersedesId], references: [id])
-  supersededBy  Decision? @relation("DecisionHistory")
-  decidedAt     DateTime  @default(now())
+  id           String    @id @default(uuid())
+  principalId  String
+  principal    Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  projectId    String?
+  project      Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title        String
+  context      String?
+  decision     String
+  supersedesId String?   @unique
+  supersedes   Decision? @relation("DecisionHistory", fields: [supersedesId], references: [id])
+  supersededBy Decision? @relation("DecisionHistory")
+  decidedAt    DateTime  @default(now())
 
   @@index([principalId])
   @@map("decisions")
@@ -212,11 +213,24 @@ enum MemoryType {
   PERSON
   PROJECT
   INFERENCE
+  LESSON // what an experience taught (may reference the experience via derivedFromId)
+  RELATIONSHIP // something about Angel's relationship with a person/group (subject names them)
+  CONTEXT // situational personal context ("traveling until March"); pair with validUntil
+}
+
+// Where a memory came from. Invariants (enforced in the database, not just code):
+//   type INFERENCE  <=>  provenance INFERRED   (a belief is never laundered into a fact by relabeling)
+//   type EXPERIENCE  =>  provenance EXPERIENCED
+enum ProvenanceKind {
+  STATED // Angel said or entered it
+  OBSERVED // the system observed it (not inferred beyond the observation)
+  EXPERIENCED // personally experienced / tested
+  INFERRED // a derived belief, hypothesis or conclusion
 }
 
 enum MemoryStatus {
-  ACTIVE       // confirmed / standing
-  UNCONFIRMED  // inferred, not yet promoted to a standing fact
+  ACTIVE // confirmed / standing
+  UNCONFIRMED // inferred, not yet promoted to a standing fact
   EXPIRED
   RETRACTED
 }
@@ -227,18 +241,60 @@ model Memory {
   principal       Principal    @relation(fields: [principalId], references: [id], onDelete: Cascade)
   type            MemoryType
   content         String
-  source          String       // e.g. "conversation", "manual", "inference:task-pattern"
+  source          String // e.g. "conversation", "manual", "inference:task-pattern"
   confidence      Float        @default(1.0) // 0..1, lower for INFERENCE
   status          MemoryStatus @default(ACTIVE)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   lastConfirmedAt DateTime?
+  // System lifetime: the memory stops being retrieved after this instant.
   expiresAt       DateTime?
+
+  // ── Memory OS (Build #9) ──
+  provenance      ProvenanceKind   @default(STATED)
+  sourceRef       String? // free reference to the origin (a message id, a URL, a memory id) — provenance detail, never authority
+  subject         String? // who/what it is about ("Ana", "my sister", "Bogotá trip")
+  occurredAt      DateTime? // when the experience/event happened (world time)
+  validFrom       DateTime? // world-time validity window: true from…
+  validUntil      DateTime? //                            …until
+  derivedFromId   String? // the memory this one was derived from (an inference's evidence, a lesson's experience)
+  derivedFrom     Memory?          @relation("MemoryDerivation", fields: [derivedFromId], references: [id], onDelete: SetNull)
+  derivations     Memory[]         @relation("MemoryDerivation")
+  retractedAt     DateTime?
+  retractedReason String?
+  revisions       MemoryRevision[]
 
   @@index([principalId])
   @@index([type])
   @@index([status])
+  @@index([principalId, subject])
   @@map("memories")
+}
+
+// Append-only history: the state a memory had BEFORE each approved change.
+// Updates never silently overwrite the past. Ties back to the request and
+// (when there was one) the approval that authorized the change.
+model MemoryRevision {
+  id                 String       @id @default(uuid())
+  memoryId           String
+  memory             Memory       @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  principalId        String
+  principal          Principal    @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  changeType         String // UPDATE | CONFIRM | RETRACT
+  previousContent    String
+  previousConfidence Float
+  previousStatus     MemoryStatus
+  previousValidFrom  DateTime?
+  previousValidUntil DateTime?
+  previousExpiresAt  DateTime?
+  changedAt          DateTime     @default(now())
+  requestId          String?
+  interfaceSource    String?
+  approvalId         String?
+
+  @@index([memoryId, changedAt])
+  @@index([principalId])
+  @@map("memory_revisions")
 }
 
 // ── Knowledge (Markdown files on disk; this table is metadata only) ───────
@@ -247,7 +303,7 @@ model KnowledgeDocument {
   id        String   @id @default(uuid())
   slug      String   @unique
   title     String
-  path      String   // relative path under knowledge/markdown/
+  path      String // relative path under knowledge/markdown/
   tags      String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -310,8 +366,8 @@ model Permission {
   agent       Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
   skillId     String
   skill       Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  resource    String          // e.g. "gmail:angel@example.com", "calendar:primary"
-  action      String          // specific action key, e.g. "SEND_EMAIL", "READ", "DELETE_EVENT"
+  resource    String // e.g. "gmail:angel@example.com", "calendar:primary"
+  action      String // specific action key, e.g. "SEND_EMAIL", "READ", "DELETE_EVENT"
   category    ActionCategory
   state       PermissionState
   createdAt   DateTime        @default(now())
@@ -334,27 +390,27 @@ enum ApprovalStatus {
 // binding fields (everything except status/decision/execution columns) are
 // immutable — enforced by a database trigger, not only by application code.
 model ApprovalRequest {
-  id            String         @id @default(uuid())
-  principalId   String
-  principal     Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  agentId       String
-  agent         Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  skillKey      String
-  resource      String
-  action        String
-  parameters    Json           @default("{}")
+  id              String           @id @default(uuid())
+  principalId     String
+  principal       Principal        @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  agentId         String
+  agent           Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillKey        String
+  resource        String
+  action          String
+  parameters      Json             @default("{}")
   // SHA-256 over the canonical serialization of principal + action + parameters.
-  payloadHash   String
-  status        ApprovalStatus @default(PENDING)
-  reason        String?
+  payloadHash     String
+  status          ApprovalStatus   @default(PENDING)
+  reason          String?
   // Interface and request that CREATED the proposal (stamped from the authenticated identity).
   interfaceSource String?
   requestId       String?
-  requestedAt   DateTime       @default(now())
-  expiresAt     DateTime
-  decidedAt     DateTime?
-  decidedVia    String?        // interface that approved/denied
-  consumedAt    DateTime?
+  requestedAt     DateTime         @default(now())
+  expiresAt       DateTime
+  decidedAt       DateTime?
+  decidedVia      String? // interface that approved/denied
+  consumedAt      DateTime?
   executionStatus ExecutionStatus?
 
   @@index([principalId, status])
@@ -410,23 +466,23 @@ enum AuditResult {
 }
 
 model AuditLog {
-  id          String         @id @default(uuid())
-  principalId String
-  principal   Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  agentId     String?
-  agent       Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  eventType   AuditEventType
-  resource    String?
-  action      String?
-  result      AuditResult
-  source      String         // e.g. "api", "cli", "system" — which SUBSYSTEM wrote the event
+  id              String         @id @default(uuid())
+  principalId     String
+  principal       Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  agentId         String?
+  agent           Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  eventType       AuditEventType
+  resource        String?
+  action          String?
+  result          AuditResult
+  source          String // e.g. "api", "cli", "system" — which SUBSYSTEM wrote the event
   // Which INTERFACE the request came from (GUIDEHUB, TELEGRAM, ...) and the
   // request it belonged to. Null for events with no interface request
   // behind them (seed scripts, tests, system jobs).
   interfaceSource String?
   requestId       String?
-  metadata    Json           @default("{}") // never store secrets here
-  createdAt   DateTime       @default(now())
+  metadata        Json           @default("{}") // never store secrets here
+  createdAt       DateTime       @default(now())
 
   @@index([principalId])
   @@index([eventType])
@@ -445,26 +501,26 @@ model AuditLog {
 // pattern reused, no jarvis-1.0 code or table imported.
 
 enum ConnectionStatus {
-  PENDING   // created, not yet authorized
-  ACTIVE    // authorized and usable
-  DISABLED  // explicitly turned off by the principal, still on record
-  ERROR     // last known operation failed (see ConnectionHealthStatus)
+  PENDING // created, not yet authorized
+  ACTIVE // authorized and usable
+  DISABLED // explicitly turned off by the principal, still on record
+  ERROR // last known operation failed (see ConnectionHealthStatus)
 }
 
 model Connection {
-  id                 String           @id @default(uuid())
-  principalId        String
-  principal          Principal        @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  provider           String           // e.g. "google", "telegram" — free-form, not an enum
-  externalAccountId  String           // the account identifier on the provider's side, e.g. an email
-  displayName        String?
-  status             ConnectionStatus @default(PENDING)
+  id                String           @id @default(uuid())
+  principalId       String
+  principal         Principal        @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  provider          String // e.g. "google", "telegram" — free-form, not an enum
+  externalAccountId String // the account identifier on the provider's side, e.g. an email
+  displayName       String?
+  status            ConnectionStatus @default(PENDING)
   // Points at a secret in CredentialStore — never the secret itself. Null
   // until a connection is actually authorized.
-  credentialRef       String?
-  metadata            Json            @default("{}") // never store secrets here
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  credentialRef     String?
+  metadata          Json             @default("{}") // never store secrets here
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@unique([principalId, provider, externalAccountId])
   @@index([principalId])
@@ -601,10 +657,10 @@ model Activity {
   type            ActivityType
   occurredAt      DateTime     @default(now())
   summary         String
-  area            String?      // life area slug, e.g. "learning", "fitness" — free-form, validated in code
-  refType         String?      // what this points at, e.g. "memory", "task"
+  area            String? // life area slug, e.g. "learning", "fitness" — free-form, validated in code
+  refType         String? // what this points at, e.g. "memory", "task"
   refId           String?
-  interfaceSource String?      // which interface recorded it
+  interfaceSource String? // which interface recorded it
   metadata        Json         @default("{}")
   createdAt       DateTime     @default(now())
 

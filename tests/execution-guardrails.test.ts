@@ -113,6 +113,7 @@ describe("gatewayExecute guardrail (legacy path is READ-only)", () => {
       "system.memory|MEMORY_CONFIRM",
       "system.memory|MEMORY_CREATE",
       "system.memory|MEMORY_DELETE",
+      "system.memory|MEMORY_RETRACT",
       "system.memory|MEMORY_UPDATE",
       "system.tasks|CREATE_REMINDER",
       "system.tasks|CREATE_TASK",

@@ -24,7 +24,7 @@ describe("memory write authority is split: create / update / confirm / delete", 
   const idA = (s: "GUIDEHUB" | "VOICE" | "TELEGRAM" = "GUIDEHUB") => identityFor(a, s);
   const memory = (id: string) => getDb().memory.findUnique({ where: { id } });
   const mk = async (principalId: string, content: string, type: "FACT" | "INFERENCE" = "FACT") =>
-    (await getDb().memory.create({ data: { principalId, type, content, source: "test", status: type === "INFERENCE" ? "UNCONFIRMED" : "ACTIVE" } })).id;
+    (await getDb().memory.create({ data: { principalId, type, content, source: "test", status: type === "INFERENCE" ? "UNCONFIRMED" : "ACTIVE", ...(type === "INFERENCE" ? { provenance: "INFERRED" as const, confidence: 0.5 } : {}) } })).id;
   const pendingFor = (memoryId: string, action: string) =>
     getDb().approvalRequest.findFirstOrThrow({ where: { principalId: a, action, status: "PENDING", parameters: { path: ["memoryId"], equals: memoryId } } });
 

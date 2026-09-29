@@ -130,7 +130,7 @@ describe("action registry: incomplete definitions can never register", () => {
         for (const [skill, action, resource] of [
           ["system.tasks", "CREATE_TASK", "angel:tasks"], ["system.tasks", "CREATE_REMINDER", "angel:tasks"],
           ["system.memory", "MEMORY_CREATE", "angel:memory"], ["system.memory", "MEMORY_UPDATE", "angel:memory"],
-          ["system.memory", "MEMORY_CONFIRM", "angel:memory"], ["system.memory", "MEMORY_DELETE", "angel:memory"],
+          ["system.memory", "MEMORY_CONFIRM", "angel:memory"], ["system.memory", "MEMORY_DELETE", "angel:memory"], ["system.memory", "MEMORY_RETRACT", "angel:memory"],
         ]) await grant(p, "jarvis-core", skill, resource, action, "WRITE");
         await expect(verifyProductionActions(p)).resolves.toBeUndefined();
       } finally { await deletePrincipal(p); }

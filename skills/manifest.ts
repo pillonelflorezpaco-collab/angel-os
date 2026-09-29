@@ -1,6 +1,6 @@
 import { registerAction } from "../gateway/actions/registry.js";
 import { createReminderDefinition, createTaskDefinition } from "./system/tasks.js";
-import { rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition } from "./system/memory.js";
+import { rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition } from "./system/memory.js";
 import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gateway/actions/verify.js";
 
 // The production action registry. Every ActionDefinition a running process
@@ -9,7 +9,7 @@ import { verifyRegisteredActions, configuredProductionPrincipalId } from "../gat
 // registerSkillActions() once at start-up (api/server.ts, scripts/telegram.ts,
 // scripts/worker.ts, and Jarvis Core). It is idempotent.
 
-const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition] as const;
+const DEFINITIONS = [createReminderDefinition, createTaskDefinition, rememberDefinition, memoryUpdateDefinition, memoryConfirmDefinition, memoryDeleteDefinition, memoryRetractDefinition] as const;
 
 let registered = false;
 

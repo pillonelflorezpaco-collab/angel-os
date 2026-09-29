@@ -1,5 +1,7 @@
 # Memory
 
+> **Current design: `docs/architecture/memory-os.md`** (Build #9 — provenance, temporal validity, retraction, revision history, database invariants). This document is the original v0.1 rationale.
+
 ## Memory ≠ Knowledge ≠ Structured state
 
 - **Structured state** (Postgres tables `tasks`, `projects`, `goals`,
@@ -60,9 +62,12 @@ stores the field; a background expiry sweep is deferred.
 interface MemoryProvider {
   addMemory(input: AddMemoryInput): Promise<MemoryRecord>;
   searchMemory(input: SearchMemoryInput): Promise<MemoryRecord[]>;
-  updateMemory(id: string, input: UpdateMemoryInput): Promise<MemoryRecord>;
-  deleteMemory(id: string): Promise<void>;
-  confirmMemory(id: string): Promise<MemoryRecord>;
+  getMemory(principalId, id): Promise<MemoryRecord>;
+  listRevisions(principalId, id): Promise<MemoryRevisionRecord[]>;
+  updateMemory(principalId, id, input, actor?): Promise<MemoryRecord>;
+  retractMemory(principalId, id, reason, actor?): Promise<MemoryRecord>;
+  deleteMemory(principalId, id): Promise<void>;
+  confirmMemory(principalId, id, actor?): Promise<MemoryRecord>;
 }
 ```
 

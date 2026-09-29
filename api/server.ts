@@ -3,7 +3,7 @@ import { z } from "zod";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { handleInterfaceMessage, MAX_INPUT_CHARS } from "../application/dispatcher.js";
 import { createTask, listTasks, createReminder, listReminders } from "../skills/system/tasks.js";
-import { search as searchMemory } from "../skills/system/memory.js";
+import { search as searchMemory, MEMORY_TYPE_VALUES } from "../skills/system/memory.js";
 import { listActivity, summarizeActivity } from "../skills/system/activity.js";
 import {
   listAuditLog,
@@ -170,11 +170,18 @@ export function createApp(options: AppOptions = {}) {
     })
   );
 
+  const memorySearchSchema = z.object({
+    q: z.string().max(500).default(""),
+    type: z.enum(MEMORY_TYPE_VALUES).optional(),
+    subject: z.string().max(120).optional(),
+  });
   api.get(
     "/memory/search",
     asyncRoute(async (req, res) => {
-      const query = typeof req.query.q === "string" ? req.query.q : "";
-      res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query } }));
+      const parsed = memorySearchSchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      const { q, type, subject } = parsed.data;
+      res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query: q, ...(type ? { type } : {}), ...(subject ? { subject } : {}) } }));
     })
   );
 
