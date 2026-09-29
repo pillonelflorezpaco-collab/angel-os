@@ -5,7 +5,13 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 export interface Rule { method: "GET" | "POST"; path: RegExp; /** POST bodies for this route must be an empty object (approvals decide exactly what was stored). */ emptyBody?: boolean }
 
-/** Step 1 of the cockpit: Today briefing, Ask Jarvis, approvals, and three inline actions. Grow this list deliberately, one screen at a time. */
+const actions = (skill: string, names: string[]): Rule => ({ method: "POST", path: new RegExp(`^/api/actions/${skill.replace(".", "\\.")}/(${names.join("|")})$`) });
+
+/**
+ * Grown one screen at a time, each entry with a test. Step 1: Today briefing, Ask Jarvis, approvals, three inline actions.
+ * Step 2: Life (visions, goals, projects, quests, tasks, people). Anything not listed — reminders, memory, knowledge, audit, results,
+ * reviews, the other domains — is unreachable from the cockpit until its screen ships.
+ */
 export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/me$/ },
   { method: "GET", path: /^\/api\/context$/ },
@@ -15,9 +21,19 @@ export const ALLOWED: Rule[] = [
   { method: "POST", path: /^\/api\/jarvis$/ },
   { method: "GET", path: /^\/api\/decisions$/ },
   { method: "GET", path: /^\/api\/learning\/due$/ },
-  { method: "POST", path: /^\/api\/actions\/system\.tasks\/TASK_COMPLETE$/ },
-  { method: "POST", path: /^\/api\/actions\/system\.decisions\/DECISION_REVIEW$/ },
-  { method: "POST", path: /^\/api\/actions\/system\.learning\/CARD_REVIEW$/ },
+  actions("system.decisions", ["DECISION_REVIEW"]),
+  actions("system.learning", ["CARD_REVIEW"]),
+  // ── Step 2: Life ──
+  { method: "GET", path: /^\/api\/life\/(overview|history|people)$/ },
+  { method: "GET", path: new RegExp(`^/api/life/projects/${UUID}$`) },
+  actions("system.life", [
+    "VISION_CREATE", "VISION_ARCHIVE",
+    "GOAL_CREATE", "GOAL_UPDATE", "GOAL_ACHIEVE", "GOAL_ABANDON",
+    "PROJECT_CREATE", "PROJECT_UPDATE", "PROJECT_SET_STATUS", "PROJECT_LINK_PERSON", "PROJECT_UNLINK_PERSON",
+    "QUEST_CREATE", "QUEST_START", "QUEST_COMPLETE", "QUEST_ABANDON",
+    "PERSON_CREATE", "PERSON_UPDATE", "PERSON_DELETE",
+  ]),
+  actions("system.tasks", ["CREATE_TASK", "TASK_COMPLETE", "TASK_CANCEL"]),
 ];
 
 export function matchRule(method: string, path: string): Rule | undefined {

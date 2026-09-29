@@ -1,44 +1,14 @@
-import { CSRF, GRADES, approvalOutcome, countdown, formatWhen, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome } from "./lib.js";
+import { GRADES, approvalOutcome, countdown, formatWhen, learningLine, listFrom, memoryLine, parseRoute, progressLabel, riskLabel, sectionNotices, writeOutcome } from "./lib.js";
+import { api, empty, h, mount, onAuthLost, outcomeBox, section, state } from "./ui.js";
+import { renderLife, renderProject } from "./life.js";
 
-// GuideHub cockpit, step 1: sign-in, Today briefing, Ask Jarvis, approvals, and three inline actions.
+// GuideHub cockpit: shell (sign-in, navigation, hash router, Ask Jarvis), the Today view, and approvals. Life screens live in life.js.
 // Rules (docs/guidehub/cockpit-design.md): all text goes through textContent (nothing from the API is ever parsed as HTML); the UI never
 // computes progress/due/counts; outcomes resolve only from responses; there is no principal id anywhere in this file.
 
 const root = document.getElementById("app");
-const state = { me: null, timeZone: undefined, active: false };
 
-/** Element helper. Children are strings (→ text nodes) or nodes. It never parses markup: API text can only ever become text. */
-function h(tag, props = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === "class") el.className = v;
-    else if (k === "text") el.textContent = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c !== undefined && c !== null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
-
-async function api(method, path, body) {
-  const init = { method, headers: { ...CSRF, Accept: "application/json" }, credentials: "same-origin" };
-  if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
-  let res;
-  try { res = await fetch(path, init); } catch { return { status: 502, body: { error: "The service is unavailable right now." } }; }
-  let parsed = null;
-  try { parsed = await res.json(); } catch { /* not JSON */ }
-  if (res.status === 401 && path !== "/session") { showSignIn("Your session ended. Sign in again."); }
-  return { status: res.status, body: parsed };
-}
-
-function outcomeBox(outcome) {
-  return h("p", { class: `outcome ${outcome.tone}`, role: outcome.tone === "bad" ? "alert" : "status" }, h("span", { class: "outcome-icon", "aria-hidden": "true", text: { good: "✓", warn: "⏳", bad: "✗", neutral: "•" }[outcome.tone] }), " ", outcome.text);
-}
-/** The ONLY place children are swapped in: null/undefined/false sections are dropped (a raw replaceChildren would print "null"). */
-const mount = (box, ...nodes) => box.replaceChildren(...nodes.flat().filter((n) => n !== null && n !== undefined && n !== false));
-const section = (title, ...body) => h("section", { class: "card" }, h("h2", { text: title }), ...body);
-const empty = (text) => h("p", { class: "muted", text });
+onAuthLost(() => showSignIn("Your session ended. Sign in again."));
 
 // ── Sign-in ──────────────────────────────────────────────────────────────
 function showSignIn(message) {
@@ -77,7 +47,10 @@ function renderShell() {
   root.replaceChildren();
   const who = state.me?.principal?.name ?? "You";
   const signOut = h("button", { class: "link", text: "Sign out", onclick: async () => { await api("DELETE", "/session"); showSignIn(); } });
-  const header = h("header", { class: "bar" }, h("strong", { class: "brand", text: "GuideHub" }),
+  const nav = h("nav", { class: "tabs", "aria-label": "Main" },
+    h("a", { id: "nav-today", href: "#/today", text: "Today" }), h("a", { id: "nav-life", href: "#/life", text: "Life" }),
+    h("a", { id: "nav-approvals", href: "#/today", class: "badge-link", hidden: true }));
+  const header = h("header", { class: "bar" }, h("strong", { class: "brand", text: "GuideHub" }), nav,
     h("span", { class: "who" }, who, state.me ? h("span", { class: "pill", text: state.me.interface.toLowerCase() }) : null), signOut);
 
   const answer = h("div", { class: "answer" });
@@ -93,14 +66,56 @@ function renderShell() {
     // /api/jarvis answers 200 with a Result whatever its status; show the Result's own status honestly.
     const status = r.body?.status;
     const tone = status === "EXECUTED" ? "good" : status === "PENDING_APPROVAL" ? "warn" : "bad";
-    mount(answer, r.status === 200 && r.body ? h("div", { class: `outcome ${tone}` }, h("p", { class: "pre", text: r.body.message ?? "" }), status === "PENDING_APPROVAL" ? h("p", { class: "muted", text: "It's waiting in Approvals below." }) : null) : outcomeBox(o));
-    if (status === "PENDING_APPROVAL") loadApprovals();
-    if (status === "EXECUTED") { ask.value = ""; loadBriefing(); }
+    mount(answer, r.status === 200 && r.body ? h("div", { class: `outcome ${tone}` }, h("p", { class: "pre", text: r.body.message ?? "" }), status === "PENDING_APPROVAL" ? h("p", { class: "muted" }, "It's waiting in ", h("a", { href: "#/today", text: "Approvals" }), ".") : null) : outcomeBox(o));
+    if (status === "PENDING_APPROVAL" || status === "EXECUTED") { if (status === "EXECUTED") ask.value = ""; state.refresh?.(); }
   });
 
+  root.append(header, h("main", { id: "main" }, askForm, answer, h("div", { id: "view" })));
+  state.refresh = renderRoute;
+  state.onPending = refreshApprovalBadge;
+  renderRoute();
+}
+
+window.addEventListener("hashchange", () => {
+  if (!state.active) return;
+  const answer = document.querySelector(".answer");
+  if (answer) mount(answer); // an answer belongs to the screen it was asked on; it does not follow you to another one
+  renderRoute();
+});
+
+/** Hash router: #/today (default), #/life, #/life/projects/<id>. Unknown hashes are Today. */
+function renderRoute() {
+  const view = document.getElementById("view");
+  if (!state.active || !view) return;
+  const route = parseRoute(location.hash);
+  for (const [id, on] of [["nav-today", route.view === "today"], ["nav-life", route.view === "life" || route.view === "project"]]) {
+    const a = document.getElementById(id);
+    if (a) on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
+  }
+  if (route.view === "life") renderLife(view);
+  else if (route.view === "project") renderProject(view, route.id);
+  else renderToday(view);
+  if (route.view !== "today") refreshApprovalBadge();
+}
+
+/** What is waiting for the owner is reachable from every screen. */
+function setApprovalBadge(n) {
+  const a = document.getElementById("nav-approvals");
+  if (!a) return;
+  a.hidden = !n;
+  a.textContent = n ? `Approvals (${n})` : "";
+}
+async function refreshApprovalBadge() {
+  if (!state.active) return;
+  const r = await api("GET", "/api/approvals");
+  const list = listFrom(r.status, r.body);
+  if (list) setApprovalBadge(list.length);
+}
+
+function renderToday(view) {
   const briefing = h("div", { id: "briefing" });
   const side = h("div", { class: "side" }, h("div", { id: "approvals" }), h("div", { id: "reviews" }), h("div", { id: "cards" }));
-  root.append(header, h("main", { id: "main" }, askForm, answer, h("div", { class: "grid" }, briefing, side)));
+  mount(view, h("div", { class: "grid" }, briefing, side));
   loadBriefing(); loadApprovals(); loadReviews(); loadCards();
 }
 
@@ -161,6 +176,7 @@ async function loadApprovals() {
   const r = await api("GET", "/api/approvals");
   const list = listFrom(r.status, r.body);
   if (!list) return mount(box, section("Approvals", outcomeBox(writeOutcome(r.status, r.body))));
+  setApprovalBadge(list.length);
   mount(box, section(`Approvals${list.length ? ` (${list.length})` : ""}`, list.length ? list.map(approvalCard) : empty("Nothing is waiting for you.")));
 }
 

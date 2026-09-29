@@ -281,6 +281,7 @@ function read<T>(identity: IdentityContext, agentKey: string, parameters: Record
 
 export const readLifeOverview = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "overview" }, life.lifeOverview);
 export const readProject = (identity: IdentityContext, input: { agentKey: string; projectId: string }) => read(identity, input.agentKey, { op: "project", projectId: input.projectId }, (pid) => life.getProject(pid, input.projectId));
+export const readLifeHistory = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "history" }, life.lifeHistory);
 export const readPeople = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "people" }, life.listPeople);
 export const readResults = (identity: IdentityContext, input: { agentKey: string; subjectKind?: "GOAL" | "PROJECT" | "QUEST" | "DECISION"; subjectId?: string }) =>
   read(identity, input.agentKey, { op: "results", subjectKind: input.subjectKind ?? null, subjectId: input.subjectId ?? null }, (pid) => decisions.listResults(pid, { subjectKind: input.subjectKind, subjectId: input.subjectId }));

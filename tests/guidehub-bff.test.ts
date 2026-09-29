@@ -234,10 +234,12 @@ describe("guidehub server (BFF)", () => {
       const { app } = build();
       const c = await login(app);
       const blocked: [string, string][] = [
-        ["get", "/api/audit"], ["get", "/api/tasks"], ["get", "/api/life/overview"], ["get", "/api/actions"], ["get", "/api/knowledge/search"], ["get", "/api/connections"],
+        ["get", "/api/audit"], ["get", "/api/tasks"], ["get", "/api/actions"], ["get", "/api/knowledge/search"], ["get", "/api/connections"], ["get", "/api/reviews"], ["get", "/api/results"], ["get", "/api/future/aspirations"],
         ["post", "/api/knowledge/ingest"], ["post", "/api/reminders"], ["post", "/api/tasks"],
-        ["post", "/api/actions/system.life/PERSON_DELETE"], ["post", "/api/actions/system.tasks/TASK_CANCEL"], ["post", "/api/actions/system.memory/MEMORY_DELETE"], ["post", "/api/actions/system.life/GOAL_CREATE"],
-        ["post", "/api/context"], ["get", "/api/jarvis"], ["delete", "/api/approvals"], ["put", "/api/jarvis"], ["patch", "/api/decisions"],
+        ["post", "/api/actions/system.memory/MEMORY_DELETE"], ["post", "/api/actions/system.life/RESULT_RECORD"], ["post", "/api/actions/system.life/REVIEW_CREATE"], ["post", "/api/actions/system.life/VISION_UPDATE"], ["post", "/api/actions/system.life/QUEST_UPDATE"],
+        ["post", "/api/actions/system.life/PROJECT_LINK_KNOWLEDGE"], ["post", "/api/actions/system.tasks/TASK_UPDATE"], ["post", "/api/actions/system.tasks/CREATE_REMINDER"], ["post", "/api/actions/system.decisions/DECISION_RECORD"], ["post", "/api/actions/system.future/ASPIRATION_ACHIEVE"], ["post", "/api/actions/system.learning/TOPIC_CREATE"], ["post", "/api/actions/system.knowledge/KNOWLEDGE_DELETE_SOURCE"],
+        ["post", "/api/actions/system.life/GOAL_CREATE/extra"], ["post", "/api/actions/system.lifeX/GOAL_CREATE"], ["post", "/api/actions/systemXlife/GOAL_CREATE"], ["post", "/api/actions/system.life/GOAL_CREATE2"], ["post", "/api/actions/system.life/xGOAL_CREATE"],
+        ["post", "/api/context"], ["get", "/api/jarvis"], ["delete", "/api/approvals"], ["put", "/api/jarvis"], ["patch", "/api/decisions"], ["delete", "/api/life/overview"], ["post", "/api/life/overview"], ["get", "/api/life/projects/not-a-uuid"], ["get", "/api/life/other"],
         ["get", `/api/approvals/${UUID}/approve`], ["post", "/api/approvals/not-a-uuid/approve"], ["post", `/api/approvals/${UUID}/approve/extra`],
         ["get", "/api/me/../audit"], ["get", "/api/me%2f..%2faudit"], ["get", "/api/integrations/google/calendar/connect"],
       ];
@@ -248,6 +250,18 @@ describe("guidehub server (BFF)", () => {
       expect(calls).toHaveLength(0);
       expect(ALLOWED.every((r) => r.method === "GET" || r.method === "POST")).toBe(true);
       expect(matchRule("DELETE", "/api/me")).toBeUndefined();
+    });
+
+    it("every step-1 and step-2 route the screens use IS allowed, exactly as listed — and nothing more", () => {
+      const allowed: [string, string][] = [
+        ["GET", "/api/me"], ["GET", "/api/context"], ["GET", "/api/approvals"], ["GET", `/api/approvals/${UUID}`], ["POST", `/api/approvals/${UUID}/approve`], ["POST", `/api/approvals/${UUID}/deny`], ["POST", "/api/jarvis"], ["GET", "/api/decisions"], ["GET", "/api/learning/due"],
+        ["POST", "/api/actions/system.decisions/DECISION_REVIEW"], ["POST", "/api/actions/system.learning/CARD_REVIEW"],
+        ["GET", "/api/life/overview"], ["GET", "/api/life/history"], ["GET", "/api/life/people"], ["GET", `/api/life/projects/${UUID}`],
+        ...["VISION_CREATE", "VISION_ARCHIVE", "GOAL_CREATE", "GOAL_UPDATE", "GOAL_ACHIEVE", "GOAL_ABANDON", "PROJECT_CREATE", "PROJECT_UPDATE", "PROJECT_SET_STATUS", "PROJECT_LINK_PERSON", "PROJECT_UNLINK_PERSON", "QUEST_CREATE", "QUEST_START", "QUEST_COMPLETE", "QUEST_ABANDON", "PERSON_CREATE", "PERSON_UPDATE", "PERSON_DELETE"].map((a) => ["POST", `/api/actions/system.life/${a}`] as [string, string]),
+        ...["CREATE_TASK", "TASK_COMPLETE", "TASK_CANCEL"].map((a) => ["POST", `/api/actions/system.tasks/${a}`] as [string, string]),
+      ];
+      for (const [m, p] of allowed) expect(matchRule(m, p), `${m} ${p}`).toBeDefined();
+      expect(ALLOWED).toHaveLength(14); // a new rule entry must come with a new line in this test
     });
 
     it("approve/deny take NO parameters: a body with anything is refused before it reaches the API; the API always receives {}", async () => {

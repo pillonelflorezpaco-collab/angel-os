@@ -1,6 +1,6 @@
 # GuideHub cockpit — design (v1, no code)
 
-Status: **step 1 is built** (see `README.md`: sign-in/session BFF, Today, Ask Jarvis, Approvals, three inline actions); steps 2–5 are still design only. This document turns the finished Angel OS backend (API v2) into a product design, and records the
+Status: **steps 1 and 2 are built** (see `README.md`: sign-in/session BFF, Today, Ask Jarvis, Approvals, inline actions, and the Life screens); steps 3–5 are still design only. This document turns the finished Angel OS backend (API v2) into a product design, and records the
 rules a UI must follow so it cannot undermine the guarantees the backend enforces. The UI is a **client of `docs/api/README.md`** — it adds no backend behaviour.
 
 ## 1. Principles (the cockpit's non-negotiables)
@@ -94,7 +94,7 @@ Keyboard-complete approval flow; status is never conveyed by colour alone (icon 
 2. **`GET /api/permissions`** ("what may I do?") so the UI can hide actions that would be `403`.
 3. **Approval history** endpoint (only pending + single are exposed).
 4. **Pagination/cursors** beyond the server-side caps (lists are capped at 100–200).
-5. **`GET /api/life/goals|quests|visions`** direct lists (the overview returns active items only; closed ones are reachable only via ids you already know).
+5. ~~`GET /api/life/goals|quests|visions` direct lists~~ — **done for step 2** as `GET /api/life/history` (closed goals/quests/projects/visions, newest first).
 6. **Token management API** if in-app sign-in (rather than operator-issued tokens) is wanted.
 
 ## 9. Delivery plan (suggested)

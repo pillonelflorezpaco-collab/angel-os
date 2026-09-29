@@ -110,6 +110,7 @@ LOW writes too, and can never approve SENSITIVE ones) · `403` DENIED (no permis
 
 | Read | Returns (`data`) |
 |---|---|
+| `GET /api/life/history` | what was CLOSED, newest first (capped at 50 each): achieved/abandoned goals, completed/abandoned quests, completed/archived projects, archived visions — history, not a to-do list; closed items never reopen | `{goals, quests, projects, visions}` |
 | `GET /api/life/overview` | active visions, goals, projects (with plain task counts `{open,done,cancelled}`), quests — no progress score |
 | `GET /api/life/projects/:id` | project with quests, tasks, linked people and knowledge |
 | `GET /api/life/people` | people |

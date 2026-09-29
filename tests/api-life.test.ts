@@ -56,7 +56,7 @@ describe("GuideHub-ready API for the Life OS domains", () => {
 
   describe("authentication and catalog", () => {
     it("every new route needs an authenticated identity", async () => {
-      for (const [method, path] of [["get", "/api/actions"], ["post", "/api/actions/system.life/GOAL_CREATE"], ["get", "/api/life/overview"], ["get", "/api/decisions"], ["get", "/api/future/aspirations"], ["get", "/api/learning/topics"], ["get", "/api/reviews"]] as const) {
+      for (const [method, path] of [["get", "/api/actions"], ["post", "/api/actions/system.life/GOAL_CREATE"], ["get", "/api/life/overview"], ["get", "/api/life/history"], ["get", "/api/decisions"], ["get", "/api/future/aspirations"], ["get", "/api/learning/topics"], ["get", "/api/reviews"]] as const) {
         expect((await (request(app) as any)[method](path)).status, path).toBe(401);
       }
     });
@@ -156,7 +156,7 @@ describe("GuideHub-ready API for the Life OS domains", () => {
         ["system.future", "ASPIRATION_ACHIEVE", { aspirationId: asp.id }],
         ["system.learning", "CARD_REVIEW", { cardId: card.id, grade: 2 }],
       ] as const) expect((await act(authB, skill, action, body)).status, action).toBe(404);
-      for (const path of ["/life/overview", "/decisions", "/future/aspirations", "/learning/topics", "/learning/due", "/results", "/reviews", "/life/people"]) {
+      for (const path of ["/life/overview", "/life/history", "/decisions", "/future/aspirations", "/learning/topics", "/learning/due", "/results", "/reviews", "/life/people"]) {
         const body = JSON.stringify((await get(authB, path)).body);
         for (const id of [project.id, decision.id, asp.id, topic.id, card.id]) expect(body, path).not.toContain(id);
       }

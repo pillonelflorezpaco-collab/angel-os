@@ -237,6 +237,22 @@ export async function lifeOverview(principalId: string) {
   };
 }
 
+/**
+ * What has been CLOSED, newest first (terminal states never reopen, so this is history, not a to-do list): achieved/abandoned goals,
+ * completed/abandoned quests, archived visions, completed/archived projects. Capped; principal-scoped in every query.
+ */
+export async function lifeHistory(principalId: string) {
+  const db = getDb();
+  const take = 50;
+  const [goals, quests, visions, projects] = await Promise.all([
+    db.goal.findMany({ where: { principalId, status: { not: "ACTIVE" } }, orderBy: { closedAt: "desc" }, take }),
+    db.quest.findMany({ where: { principalId, status: { in: ["COMPLETED", "ABANDONED"] } }, orderBy: { closedAt: "desc" }, take }),
+    db.vision.findMany({ where: { principalId, status: "ARCHIVED" }, orderBy: { updatedAt: "desc" }, take }),
+    db.project.findMany({ where: { principalId, status: { in: ["COMPLETED", "ARCHIVED"] } }, orderBy: { updatedAt: "desc" }, take }),
+  ]);
+  return { goals, quests, visions, projects };
+}
+
 export async function getProject(principalId: string, id: string) {
   const p = await getDb().project.findFirst({
     where: { id, principalId },

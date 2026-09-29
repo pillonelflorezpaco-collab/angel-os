@@ -45,3 +45,26 @@ button.link { border: 0; background: none; color: var(--accent); text-decoration
 .params { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow: auto; font-size: .8rem; }
 .signin { display: flex; flex-direction: column; } .signin button { margin-top: 12px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ── navigation, forms and Life (step 2) ─────────────────────────────── */
+.tabs { display: flex; gap: 4px; align-items: center; } .tabs a { padding: 6px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; } .tabs a[aria-current=page] { color: var(--ink); background: var(--bg); font-weight: 600; }
+.tabs a:hover { color: var(--ink); } .badge-link { color: var(--warn) !important; border: 1px solid var(--warn); }
+a.strong { font-weight: 600; } main a { color: var(--accent); }
+details { margin: 8px 0; } summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+.form { align-items: stretch; gap: 4px; margin-top: 8px; } .field { display: flex; flex-direction: column; } .field label { margin: 8px 0 4px; }
+.hint { font-size: .85rem; margin: 4px 0 0; }
+select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: inherit; color: inherit; }
+input[type=date] { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: inherit; color: inherit; }
+.guard, .guarded { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.inline-guard { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); min-width: 240px; }
+.result.inline { display: inline-block; } .actions .result { margin: 0; }
+.tag.done { color: var(--good); border-color: var(--good); }
+.list li.muted { color: var(--muted); }
+h1 + .grid, main > h1 { margin-top: 0; }
+
+button.link, .who, .tabs a { white-space: nowrap; }
+@media (max-width: 800px) {
+  .bar { flex-wrap: wrap; gap: 8px 12px; }
+  .tabs { order: 3; width: 100%; flex-wrap: wrap; }
+  .who { margin-left: auto; }
+}

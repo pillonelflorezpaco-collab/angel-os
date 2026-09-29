@@ -3,7 +3,7 @@ import { z } from "zod";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
 import type { Result } from "../core/types/index.js";
 import { isKnownAction, listActionCatalog, proposeNamedAction } from "../skills/system/apiActions.js";
-import { readLifeOverview, readProject, readPeople, readResults, readReviews } from "../skills/system/life.js";
+import { readLifeOverview, readLifeHistory, readProject, readPeople, readResults, readReviews } from "../skills/system/life.js";
 import { readDecision, listDecisionRecords } from "../skills/system/decisions.js";
 import { readFutureOverview, readAspiration } from "../skills/system/future.js";
 import { readLearningOverview, readDueCards, readCard } from "../skills/system/learning.js";
@@ -54,6 +54,7 @@ export function lifeRouter(): express.Router {
 
   // ── Life OS structure ────────────────────────────────────────────────────
   r.get("/life/overview", asyncRoute(async (req, res) => respond(res, await readLifeOverview(identityOf(req), { agentKey }))));
+  r.get("/life/history", asyncRoute(async (req, res) => respond(res, await readLifeHistory(identityOf(req), { agentKey }))));
   r.get("/life/people", asyncRoute(async (req, res) => respond(res, await readPeople(identityOf(req), { agentKey }))));
   r.get("/life/projects/:id", asyncRoute(async (req, res) => {
     if (!uuid.safeParse(req.params.id).success) return badId(res);

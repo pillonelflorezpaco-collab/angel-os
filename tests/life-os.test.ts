@@ -4,7 +4,7 @@ import { decideApproval } from "../gateway/index.js";
 import { setClock } from "../gateway/clock.js";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { registerSkillActions, PRODUCTION_DEFINITIONS } from "../skills/manifest.js";
-import { proposeLife, readLifeOverview, readProject, readPeople } from "../skills/system/life.js";
+import { proposeLife, readLifeOverview, readLifeHistory, readProject, readPeople } from "../skills/system/life.js";
 import { proposeTaskAction, createTask } from "../skills/system/tasks.js";
 import { DeterministicContextEngine } from "../context/retrieval/index.js";
 import { createPrincipal, deletePrincipal, grant } from "./helpers/fixtures.js";
@@ -75,6 +75,34 @@ describe("Life OS: vision → goal → project → quest → task, people and li
     const detail = (await readProject(idA(), { ...readA, projectId: project.id })).data as any;
     expect(detail.tasks.map((t: any) => t.id).sort()).toEqual([t1, t2].sort());
     expect(detail.quests).toHaveLength(1);
+  });
+
+  it("history lists what was CLOSED (newest first), is capped, never includes active items, and is private to the owner", async () => {
+    const c = (await createPrincipal("Life history")).id;
+    try {
+      for (const act of ["GOAL_CREATE", "GOAL_ACHIEVE", "GOAL_ABANDON", "PROJECT_CREATE", "PROJECT_SET_STATUS", "QUEST_CREATE", "QUEST_START", "QUEST_COMPLETE", "QUEST_ABANDON", "VISION_CREATE", "VISION_ARCHIVE"]) await grant(c, JARVIS_AGENT_KEY, "system.life", "angel:life", act, "WRITE");
+      await grant(c, JARVIS_AGENT_KEY, "system.life", "angel:life", "LIFE_READ", "READ");
+      const who = identityFor(c, "GUIDEHUB");
+      const g1 = await ok(who, "GOAL_CREATE", { title: "first done" }); await ok(who, "GOAL_ACHIEVE", { goalId: g1.id, note: "yes" });
+      const g2 = await ok(who, "GOAL_CREATE", { title: "second dropped" }); await ok(who, "GOAL_ABANDON", { goalId: g2.id, reason: "no time" });
+      await ok(who, "GOAL_CREATE", { title: "still active" });
+      const p = await ok(who, "PROJECT_CREATE", { name: "finished project" }); await ok(who, "PROJECT_SET_STATUS", { projectId: p.id, status: "COMPLETED" });
+      await ok(who, "PROJECT_CREATE", { name: "running project" });
+      const q = await ok(who, "QUEST_CREATE", { projectId: p.id, title: "done quest", objective: "o", criteria: "c" }); await ok(who, "QUEST_START", { questId: q.id }); await ok(who, "QUEST_COMPLETE", { questId: q.id });
+      await ok(who, "QUEST_CREATE", { projectId: p.id, title: "planned quest", objective: "o", criteria: "c" });
+      const open = await ok(who, "QUEST_CREATE", { projectId: p.id, title: "active quest", objective: "o", criteria: "c" }); await ok(who, "QUEST_START", { questId: open.id });
+      const v = await ok(who, "VISION_CREATE", { title: "old vision", statement: "s" }); await ok(who, "VISION_ARCHIVE", { visionId: v.id });
+      const h = (await readLifeHistory(who, readA)).data as any;
+      expect(h.goals.map((g: any) => g.title)).toEqual(["second dropped", "first done"]); // newest closed first
+      expect(h.goals.map((g: any) => g.status)).toEqual(["ABANDONED", "ACHIEVED"]);
+      expect(h.projects.map((x: any) => x.name)).toEqual(["finished project"]);
+      expect(h.quests.map((x: any) => x.title)).toEqual(["done quest"]);
+      expect(h.visions.map((x: any) => x.title)).toEqual(["old vision"]);
+      expect(JSON.stringify(h)).not.toMatch(/still active|running project|planned quest|active quest/);
+      const mine = (await readLifeHistory(idB(), readA)).data as any;
+      expect(JSON.stringify(mine)).not.toMatch(/first done|second dropped|finished project|done quest|old vision/);
+      expect((await readLifeHistory(identityFor((await createPrincipal("Life history none")).id), readA)).status).toBe("DENIED");
+    } finally { await deletePrincipal(c); }
   });
 
   it("another principal sees none of it and cannot read or address it", async () => {

@@ -1,7 +1,13 @@
-# GuideHub cockpit — running it (step 1)
+# GuideHub cockpit — running it (steps 1–2)
 
-Step 1 of `cockpit-design.md`: **sign-in + session, the Today briefing, Ask Jarvis, approvals, and three inline actions** (complete a task, look back on a
-decision, review a recall card). Everything else in the design is later steps.
+**Step 1** (`cockpit-design.md` §9): sign-in + session, the Today briefing, Ask Jarvis, approvals, and three inline actions (complete a task, look back on a decision, review a recall card).
+**Step 2 — Life:** `#/life` (visions, goals, projects with plain task counts, open quests, people, and a read-only **History** of everything closed) and `#/life/projects/<id>`
+(quests with the owner's own "done when" criteria, tasks, linked people and knowledge). Everything else in the design is later steps.
+
+Life rules the UI enforces (and tests pin): closing something (achieve, abandon, complete, archive) is a guarded, explicit act — abandoning needs a written reason;
+a quest must be started before it can be completed and its "done when" is required; **closed items are read-only** (no reopen control exists — the API has none); only transitions the API
+allows are offered (the server stays the authority); deleting a person is a **request** — the screen says "Sent for your approval — nothing has changed yet", the approvals badge in the header
+updates at once, and the person stays until you approve it on Today. Dates are calendar dates stored as noon UTC so the same date shows everywhere.
 
 ## What it is
 
@@ -14,8 +20,8 @@ browser ──(session cookie)──▶ guidehub/server.ts ──(cockpit's own 
 
 - It imports **nothing** from the backend and has no database: it is a pure HTTP client of the API (`docs/api/README.md`). A boundary test enforces this.
 - The API token lives **only on the server**. The browser holds an opaque, HttpOnly, SameSite=Strict session cookie (server-side session, real logout, 12 h absolute / 2 h idle).
-- The proxy is **default-deny** (`guidehub/proxy.ts`): only the allow-listed method+path pairs reach the API — today `me`, `context`, `approvals` (+ approve/deny with an empty body),
-  `jarvis`, `decisions`, `learning/due`, and the three inline actions. Grow the list one screen at a time, with a test.
+- The proxy is **default-deny** (`guidehub/proxy.ts`): only the allow-listed method+path pairs reach the API — `me`, `context`, `approvals` (+ approve/deny with an empty body),
+  `jarvis`, `decisions`, `learning/due`, the Life reads (`life/overview|history|people|projects/:id`), and 23 named actions (3 inline + Life). Grow the list one screen at a time; a test pins the exact list.
 
 ## Configure and run
 
@@ -49,11 +55,11 @@ State-changing requests need the `X-Requested-With: guidehub-cockpit` header and
 
 ## Tests
 
-- `tests/guidehub-bff.test.ts` — config, hashing, sessions, throttle, cookie flags, CSRF/origin, proxy allow-list, header hygiene (28 tests, 18 mutants killed).
-- `tests/guidehub-ui.test.ts` — the design's rules as pure functions (outcomes, "No evidence yet", withheld/unavailable, guesses labelled) + static frontend safety checks.
-- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (22 checks, screenshots). Header lists the environment variables.
+- `tests/guidehub-bff.test.ts` — config, hashing, sessions, throttle, cookie flags, CSRF/origin, the exact proxy allow-list (default deny), header hygiene.
+- `tests/guidehub-ui.test.ts` — the design's rules as pure functions (outcomes, "No evidence yet", allowed transitions, terminal states, form→body, routes) + static safety checks across every frontend module (text-only rendering, one fetch wrapper, every call is an allowed route).
+- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (42 checks: sign-in, Today, the whole Life journey, phone width, dark mode; screenshots). Header lists the environment variables.
 
 ## Known limits (step 1)
 
-Single owner, one cookie session store in memory (a restart signs everyone out); no in-app token management; no offline mode; forms for later screens are not built; the briefing shows what
+Single owner, one cookie session store in memory (a restart signs everyone out); no in-app token management; no offline mode; visions and quests can be created/closed but not edited (the proxy does not allow `VISION_UPDATE`/`QUEST_UPDATE` yet); knowledge links on a project are shown but not editable (Knowledge screen comes later); forms for later screens are not built; the briefing shows what
 `GET /api/context` returns (a focus box narrows it). See `cockpit-design.md` §8 for backend gaps that would help later steps.
