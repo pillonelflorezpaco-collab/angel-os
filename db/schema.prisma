@@ -22,30 +22,34 @@ model Principal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  people             Person[]
-  projects           Project[]
-  tasks              Task[]
-  reminders          Reminder[]
-  goals              Goal[]
-  decisions          Decision[]
-  memories           Memory[]
-  permissions        Permission[]
-  approvals          ApprovalRequest[]
-  connections        Connection[]
-  oauthStates        OAuthState[]
-  apiTokens          ApiToken[]
-  externalIdentities ExternalIdentity[]
-  activities         Activity[]
-  memoryRevisions    MemoryRevision[]
-  knowledgeSources   KnowledgeSource[]
-  knowledgeItems     KnowledgeItem[]
-  knowledgeRelations KnowledgeRelation[]
-  visions            Vision[]
-  quests             Quest[]
-  results            Result[]
-  aspirations        Aspiration[]
-  learningTopics     LearningTopic[]
-  reviews            Review[]
+  people              Person[]
+  projects            Project[]
+  tasks               Task[]
+  reminders           Reminder[]
+  goals               Goal[]
+  decisions           Decision[]
+  memories            Memory[]
+  permissions         Permission[]
+  approvals           ApprovalRequest[]
+  connections         Connection[]
+  oauthStates         OAuthState[]
+  apiTokens           ApiToken[]
+  externalIdentities  ExternalIdentity[]
+  activities          Activity[]
+  memoryRevisions     MemoryRevision[]
+  knowledgeSources    KnowledgeSource[]
+  knowledgeItems      KnowledgeItem[]
+  knowledgeRelations  KnowledgeRelation[]
+  visions             Vision[]
+  quests              Quest[]
+  results             Result[]
+  aspirations         Aspiration[]
+  learningTopics      LearningTopic[]
+  evidenceLinks       EvidenceLink[]
+  aspirationStates    AspirationState[]
+  learningObjectives  LearningObjective[]
+  learningExperiments LearningExperiment[]
+  reviews             Review[]
 
   @@map("principals")
 }
@@ -1028,9 +1032,80 @@ model Aspiration {
   updatedAt   DateTime         @updatedAt
 
   metrics Metric[]
+  states  AspirationState[]
 
   @@index([principalId, status])
   @@map("aspirations")
+}
+
+// ── Future Self evidence model (Step 4) ───────────────────────────────────
+// CURRENT → DESIRED → GAP → EVIDENCE → NEXT ACTION → RESULT → UPDATED STATE.
+// A state is an immutable snapshot in the owner's words. Every state after the first must carry evidence
+// (EvidenceLink rows), and an aspiration's current/gap/desired mirror is only ever written together with a state.
+
+enum StateBasis {
+  INITIAL // the owner's starting statement; no evidence required
+  EVIDENCED // updated because of linked evidence
+}
+
+model AspirationState {
+  id           String     @id @default(uuid())
+  principalId  String
+  principal    Principal  @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  aspirationId String
+  aspiration   Aspiration @relation(fields: [aspirationId], references: [id], onDelete: Cascade)
+  current      String
+  gap          String?
+  desired      String
+  basis        StateBasis
+  note         String?
+  createdAt    DateTime   @default(now())
+
+  @@index([aspirationId, createdAt])
+  @@index([principalId])
+  @@map("aspiration_states")
+}
+
+enum EvidenceSubject {
+  ASPIRATION_STATE
+  OBJECTIVE
+  EXPERIMENT
+}
+
+enum EvidenceSource {
+  RESULT
+  DECISION
+  MEMORY // only EXPERIENCE/LESSON-typed memory is accepted as evidence (enforced in the store)
+  TASK
+  QUEST
+  LEARNING_SESSION
+  METRIC_READING
+  OBSERVATION // an experiment observation
+}
+
+// CONTEXT = related but neither for nor against. Absence of a link is never a CONTRADICTS.
+enum EvidenceStance {
+  SUPPORTS
+  CONTRADICTS
+  CONTEXT
+}
+
+// Append-only relation: says "this thing is evidence about that thing". It never copies or alters the source.
+model EvidenceLink {
+  id          String          @id @default(uuid())
+  principalId String
+  principal   Principal       @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  subjectKind EvidenceSubject
+  subjectId   String
+  sourceKind  EvidenceSource
+  sourceId    String
+  stance      EvidenceStance
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([subjectKind, subjectId, sourceKind, sourceId])
+  @@index([principalId, subjectKind, subjectId])
+  @@map("evidence_links")
 }
 
 // Set once. Baseline and target are never edited afterwards, so progress cannot be gamed by moving the goalposts.
@@ -1041,6 +1116,7 @@ model Metric {
   aspiration   Aspiration @relation(fields: [aspirationId], references: [id], onDelete: Cascade)
   name         String
   unit         String
+  definition   String     @default("") // what exactly is measured and how
   baseline     Float
   target       Float
   createdAt    DateTime   @default(now())
@@ -1054,15 +1130,16 @@ model Metric {
 
 // Append-only. Optionally backed by a Result (the evidence the reading came from).
 model MetricReading {
-  id          String   @id @default(uuid())
+  id          String            @id @default(uuid())
   principalId String
   metricId    String
-  metric      Metric   @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  metric      Metric            @relation(fields: [metricId], references: [id], onDelete: Cascade)
   value       Float
   observedAt  DateTime
   resultId    String?
+  provenance  ReadingProvenance @default(OWNER_REPORTED)
   note        String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime          @default(now())
 
   @@index([metricId, observedAt])
   @@index([principalId])
@@ -1073,6 +1150,12 @@ model MetricReading {
 // Topics, self-reported study sessions, and recall cards. What is "due" and how "stable" a card is are
 // DERIVED from the append-only review history (learning/schedule.ts) — nothing is stored as a score, streak
 // or XP, and nothing is ever declared "mastered" automatically.
+
+enum ReadingProvenance {
+  OWNER_REPORTED
+  MEASURED // from a device / instrument
+  DERIVED // computed from other records
+}
 
 enum TopicStatus {
   ACTIVE
@@ -1154,4 +1237,92 @@ model CardReview {
   @@index([cardId, reviewedAt])
   @@index([principalId])
   @@map("card_reviews")
+}
+
+// ── Learning objectives & experiments (Step 4) ────────────────────────────
+// An objective is what the owner intends to be able to do and how THEY will judge it (evidenceStandard).
+// Meeting it is the owner's claim, made with linked evidence; nothing is ever inferred as "learned".
+
+enum ObjectiveStatus {
+  ACTIVE
+  MET // owner's claim, evidence-linked; terminal
+  ABANDONED // terminal
+}
+
+model LearningObjective {
+  id               String          @id @default(uuid())
+  principalId      String
+  principal        Principal       @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  topicId          String?
+  aspirationId     String?
+  title            String
+  evidenceStandard String // what would count as evidence, in the owner's words
+  status           ObjectiveStatus @default(ACTIVE)
+  closedAt         DateTime?
+  closedNote       String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  experiments LearningExperiment[]
+
+  @@index([principalId, status])
+  @@map("learning_objectives")
+}
+
+// CANDIDATE → OBSERVED → SUPPORTED → CONFIRMED, or REJECTED. Evidence-gated (learning/hypothesis.ts).
+// These are states of a personal experiment, never universal claims.
+enum HypothesisStatus {
+  CANDIDATE
+  OBSERVED
+  SUPPORTED
+  CONFIRMED
+  REJECTED
+}
+
+model LearningExperiment {
+  id          String             @id @default(uuid())
+  principalId String
+  principal   Principal          @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  objectiveId String?
+  objective   LearningObjective? @relation(fields: [objectiveId], references: [id], onDelete: NoAction)
+  hypothesis  String
+  method      String
+  status      HypothesisStatus   @default(CANDIDATE)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  observations ExperimentObservation[]
+  changes      ExperimentStatusChange[]
+
+  @@index([principalId, status])
+  @@map("learning_experiments")
+}
+
+model ExperimentObservation {
+  id           String             @id @default(uuid())
+  principalId  String
+  experimentId String
+  experiment   LearningExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  text         String
+  observedAt   DateTime
+  createdAt    DateTime           @default(now())
+
+  @@index([experimentId, observedAt])
+  @@index([principalId])
+  @@map("experiment_observations")
+}
+
+model ExperimentStatusChange {
+  id           String             @id @default(uuid())
+  principalId  String
+  experimentId String
+  experiment   LearningExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  fromStatus   HypothesisStatus
+  toStatus     HypothesisStatus
+  note         String?
+  createdAt    DateTime           @default(now())
+
+  @@index([experimentId, createdAt])
+  @@index([principalId])
+  @@map("experiment_status_changes")
 }

@@ -132,3 +132,16 @@ Two owner decisions, both implemented:
    explicit operator procedure (SQL), never a side effect. Tradeoff accepted: the database no longer stops an audit row naming an unknown principal id — writers always take the id from the explicit identity.
 2. **Legacy global Markdown knowledge retired.** The provider, its skill functions (`searchKnowledge`/`listKnowledge`/`readKnowledge`), the context-engine merge and their tests are gone. The three documents were ingested
    as the owner's principal-owned knowledge (`scripts/ingest-markdown.ts`) and kept as documentation in `docs/legacy-knowledge/`. There is no global knowledge any more; a test asserts it.
+
+## Future Self & Learning evidence model (Step 4)
+
+CURRENT STATE → DESIRED STATE → GAP → EVIDENCE → NEXT ACTION → RESULT → UPDATED STATE.
+
+- **AspirationState** — immutable snapshots of current/gap/desired in the owner's words. Created atomically with the aspiration (`INITIAL`); every later state is `EVIDENCED` and is written only by `ASPIRATION_STATE_RECORD`, which needs at least one supporting/contradicting evidence link (DB deferred trigger enforces ≥1 link of any stance). `ASPIRATION_UPDATE` no longer edits current/gap/desired. The aspiration row mirrors the latest state and is written in the same transaction.
+- **EvidenceLink** — one append-only relation (`subject` ← `source`, stance SUPPORTS/CONTRADICTS/CONTEXT). Sources are existing records (result, decision, task, quest, learning session, metric reading, experiment observation, EXPERIENCE/LESSON memory); nothing is copied. Inferences and stated facts are refused as evidence; absence of a link is never a contradiction. Both ends are owner-checked in the store and by `evidence_links_guard`.
+- **Metrics** carry a `definition`; readings carry `provenance` (OWNER_REPORTED/MEASURED/DERIVED). Zero is a valid reading; there are no scores, XP or levels.
+- **LearningObjective** — intent plus the owner's own `evidenceStandard`; `MET` is the owner's claim and needs a supporting link, `ABANDONED` needs a reason; both terminal.
+- **LearningExperiment** — HYPOTHESIS + METHOD → observations (append-only) → `CANDIDATE → OBSERVED → SUPPORTED → CONFIRMED` or `REJECTED`, gated by the pure `learning/hypothesis.ts` (confirmation: ≥3 observations on ≥2 days, ≥2 supporting links, support > contradiction). Status history is append-only; statuses describe *this owner's* experiment, never a universal claim.
+- **Lesson** — a `LESSON` memory (provenance EXPERIENCED) with `sourceRef = experiment:<id>`, requiring ≥1 observation. It references the experiment and never rewrites it.
+
+All writes remain ActionDefinitions (`ASPIRATION_STATE_RECORD`, `EVIDENCE_ATTACH`, `OBJECTIVE_CREATE/CLOSE`, `EXPERIMENT_CREATE/OBSERVE/TRANSITION`, `LESSON_RECORD`) under the existing permission/interface/approval/audit path. Read routes: `GET /future/aspirations/:id/states`, `/learning/objectives`, `/learning/experiments[/:id]`.

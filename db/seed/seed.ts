@@ -163,6 +163,8 @@ async function main() {
     { resource: "angel:future", action: "ASPIRATION_RELEASE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     { resource: "angel:future", action: "METRIC_CREATE", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     { resource: "angel:future", action: "METRIC_READING_RECORD", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "ASPIRATION_STATE_RECORD", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
+    { resource: "angel:future", action: "EVIDENCE_ATTACH", category: "WRITE", state: "ALLOWED", skillId: futureSkill.id },
     { resource: "angel:learning", action: "LEARNING_READ", category: "READ", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "TOPIC_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "TOPIC_UPDATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
@@ -171,6 +173,12 @@ async function main() {
     { resource: "angel:learning", action: "CARD_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "CARD_REVIEW", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "CARD_RETIRE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "OBJECTIVE_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "OBJECTIVE_CLOSE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "EXPERIMENT_CREATE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "EXPERIMENT_OBSERVE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "EXPERIMENT_TRANSITION", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    { resource: "angel:learning", action: "LESSON_RECORD", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",

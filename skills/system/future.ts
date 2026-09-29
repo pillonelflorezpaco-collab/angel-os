@@ -4,6 +4,7 @@ import { assertExplicitIdentity, type IdentityContext } from "../../identity/ind
 import type { Result } from "../../core/types/index.js";
 import { LIFE_AREA_PATTERN } from "../../activity/service.js";
 import * as future from "../../future/store.js";
+import * as evidence from "../../evidence/store.js";
 import { define } from "./life.js";
 
 // Future Self: CURRENT → GAP → DESIRED → NEXT in the owner's words, with evidence-only progress.
@@ -32,9 +33,9 @@ export const aspirationCreateDefinition = define({
 
 export const aspirationUpdateDefinition = define({
   action: "ASPIRATION_UPDATE",
-  schema: strict({ aspirationId: id, current: text.optional(), gap: text.nullable().optional(), desired: text.optional(), goalId: id.nullable().optional(), nextTaskId: id.nullable().optional(), nextQuestId: id.nullable().optional() })
+  schema: strict({ aspirationId: id, goalId: id.nullable().optional(), nextTaskId: id.nullable().optional(), nextQuestId: id.nullable().optional() })
     .refine((p) => Object.keys(p).some((k) => k !== "aspirationId"), { message: "nothing to update" }),
-  describe: (p) => `Update aspiration ${p.aspirationId}`,
+  describe: (p) => `Update the links of aspiration ${p.aspirationId}`,
   run: (pid, { aspirationId, ...d }) => future.updateAspiration(pid, aspirationId, d),
   message: () => "Aspiration updated.",
 }, target);
@@ -59,7 +60,7 @@ export const aspirationReleaseDefinition = define({
 /** Baseline and target are fixed at creation: progress can't be gamed by moving the goalposts. */
 export const metricCreateDefinition = define({
   action: "METRIC_CREATE",
-  schema: strict({ aspirationId: id, name: title, unit: z.string().trim().min(1).max(40), baseline: num, target: num })
+  schema: strict({ aspirationId: id, name: title, unit: z.string().trim().min(1).max(40), definition: text, baseline: num, target: num })
     .refine((p) => p.baseline !== p.target, { message: "baseline and target must differ" }),
   describe: (p) => `Add metric ${p.name} (${p.baseline} → ${p.target} ${p.unit})`,
   run: (pid, p) => future.createMetric(pid, p),
@@ -68,14 +69,39 @@ export const metricCreateDefinition = define({
 
 export const metricReadingDefinition = define({
   action: "METRIC_READING_RECORD",
-  schema: strict({ metricId: id, value: num, observedAt: z.string().datetime().optional(), resultId: id.optional(), note: note.optional() }),
+  schema: strict({ metricId: id, value: num, observedAt: z.string().datetime().optional(), resultId: id.optional(), provenance: z.enum(["OWNER_REPORTED", "MEASURED", "DERIVED"]).optional(), note: note.optional() }),
   describe: (p) => `Record a reading (${p.value}) for metric ${p.metricId}`,
   run: (pid, p) => future.recordReading(pid, { ...p, observedAt: p.observedAt ? new Date(p.observedAt) : undefined }),
   message: () => "Reading recorded.",
   activity: (r: { id: string }) => ({ type: "GOAL_PROGRESS", summary: "Recorded a progress reading", refType: "metric_reading", refId: r.id }),
 }, target);
 
-export const FUTURE_DEFINITIONS = [aspirationCreateDefinition, aspirationUpdateDefinition, aspirationAchieveDefinition, aspirationReleaseDefinition, metricCreateDefinition, metricReadingDefinition];
+const evidenceItem = strict({
+  sourceKind: z.enum(["RESULT", "DECISION", "MEMORY", "TASK", "QUEST", "LEARNING_SESSION", "METRIC_READING", "OBSERVATION"]),
+  sourceId: id,
+  stance: z.enum(["SUPPORTS", "CONTRADICTS", "CONTEXT"]),
+  note: note.optional(),
+});
+
+/** CURRENT → GAP → DESIRED changes only through evidence: a snapshot is written, never an edit. */
+export const aspirationStateRecordDefinition = define({
+  action: "ASPIRATION_STATE_RECORD",
+  schema: strict({ aspirationId: id, current: text, gap: text.nullable().optional(), desired: text, note: note.optional(), evidence: z.array(evidenceItem).min(1).max(10) })
+    .refine((p) => p.evidence.some((e) => e.stance !== "CONTEXT"), { message: "evidence must include at least one supporting or contradicting item" }),
+  describe: (p) => `Record an updated state for aspiration ${p.aspirationId} (${p.evidence.length} evidence)`,
+  run: (pid, { aspirationId, ...d }) => future.recordState(pid, { aspirationId, ...d }),
+  message: () => "Updated state recorded with its evidence.",
+}, target);
+
+export const evidenceAttachDefinition = define({
+  action: "EVIDENCE_ATTACH",
+  schema: strict({ subjectKind: z.enum(["ASPIRATION_STATE", "OBJECTIVE", "EXPERIMENT"]), subjectId: id, sourceKind: evidenceItem.shape.sourceKind, sourceId: id, stance: evidenceItem.shape.stance, note: note.optional() }),
+  describe: (p) => `Link ${p.sourceKind.toLowerCase()} ${p.sourceId} as ${p.stance.toLowerCase()} evidence for ${p.subjectKind.toLowerCase()} ${p.subjectId}`,
+  run: (pid, p) => evidence.attachEvidence(pid, p),
+  message: () => "Evidence linked.",
+}, target);
+
+export const FUTURE_DEFINITIONS = [aspirationStateRecordDefinition, evidenceAttachDefinition, aspirationCreateDefinition, aspirationUpdateDefinition, aspirationAchieveDefinition, aspirationReleaseDefinition, metricCreateDefinition, metricReadingDefinition];
 
 export function proposeFuture(identity: IdentityContext, action: string, parameters: unknown): Promise<Result> {
   return proposeAction(identity, { skillKey: SKILL_KEY, action, parameters });
@@ -87,4 +113,5 @@ function read<T>(identity: IdentityContext, agentKey: string, parameters: Record
   return gatewayExecute({ principalId: explicit.principalId, agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: READ_ACTION, parameters }, () => fn(explicit.principalId), "skill.system.future");
 }
 export const readFutureOverview = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "overview" }, future.futureOverview);
+export const readStateTimeline = (identity: IdentityContext, input: { agentKey: string; aspirationId: string }) => read(identity, input.agentKey, { op: "states", aspirationId: input.aspirationId }, (pid) => future.stateTimeline(pid, input.aspirationId));
 export const readAspiration = (identity: IdentityContext, input: { agentKey: string; aspirationId: string }) => read(identity, input.agentKey, { op: "get", aspirationId: input.aspirationId }, (pid) => future.getAspiration(pid, input.aspirationId));

@@ -5,8 +5,8 @@ import type { Result } from "../core/types/index.js";
 import { isKnownAction, listActionCatalog, proposeNamedAction } from "../skills/system/apiActions.js";
 import { readLifeOverview, readLifeHistory, readProject, readPeople, readResults, readReviews } from "../skills/system/life.js";
 import { readDecision, listDecisionRecords } from "../skills/system/decisions.js";
-import { readFutureOverview, readAspiration } from "../skills/system/future.js";
-import { readLearningOverview, readDueCards, readCard } from "../skills/system/learning.js";
+import { readFutureOverview, readAspiration, readStateTimeline } from "../skills/system/future.js";
+import { readLearningOverview, readDueCards, readCard, readObjectives, readExperiments, readExperiment } from "../skills/system/learning.js";
 import { asyncRoute, identityOf } from "./middleware.js";
 
 // GuideHub-ready surface for the Life OS domains (BUILD #18). Still an ADAPTER: identity comes from the
@@ -86,12 +86,23 @@ export function lifeRouter(): express.Router {
     respond(res, await readAspiration(identityOf(req), { agentKey, aspirationId: req.params.id }));
   }));
 
+  r.get("/future/aspirations/:id/states", asyncRoute(async (req, res) => {
+    if (!uuid.safeParse(req.params.id).success) return badId(res);
+    respond(res, await readStateTimeline(identityOf(req), { agentKey, aspirationId: req.params.id }));
+  }));
+
   // ── Learning Lab ────────────────────────────────────────────────────────
   r.get("/learning/topics", asyncRoute(async (req, res) => respond(res, await readLearningOverview(identityOf(req), { agentKey }))));
   r.get("/learning/due", asyncRoute(async (req, res) => {
     const q = z.object({ topicId: uuid.optional(), limit: z.coerce.number().int().min(1).max(100).optional() }).strict().safeParse(req.query);
     if (!q.success) return res.status(400).json({ error: q.error.flatten() });
     respond(res, await readDueCards(identityOf(req), { agentKey, ...q.data }));
+  }));
+  r.get("/learning/objectives", asyncRoute(async (req, res) => respond(res, await readObjectives(identityOf(req), { agentKey }))));
+  r.get("/learning/experiments", asyncRoute(async (req, res) => respond(res, await readExperiments(identityOf(req), { agentKey }))));
+  r.get("/learning/experiments/:id", asyncRoute(async (req, res) => {
+    if (!uuid.safeParse(req.params.id).success) return badId(res);
+    respond(res, await readExperiment(identityOf(req), { agentKey, experimentId: req.params.id }));
   }));
   r.get("/learning/cards/:id", asyncRoute(async (req, res) => {
     if (!uuid.safeParse(req.params.id).success) return badId(res);

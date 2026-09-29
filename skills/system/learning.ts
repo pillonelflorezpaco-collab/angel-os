@@ -4,6 +4,8 @@ import { assertExplicitIdentity, type IdentityContext } from "../../identity/ind
 import type { Result } from "../../core/types/index.js";
 import { LIFE_AREA_PATTERN } from "../../activity/service.js";
 import * as learning from "../../learning/store.js";
+import * as exp from "../../learning/experiments.js";
+import { getMemoryProvider } from "../../memory/index.js";
 import { define } from "./life.js";
 
 // Learning Lab: topics, self-reported study sessions, recall cards. Writes are ActionDefinitions
@@ -79,7 +81,60 @@ export const cardRetireDefinition = define({
   message: () => "Card retired.",
 }, target);
 
-export const LEARNING_DEFINITIONS = [topicCreateDefinition, topicUpdateDefinition, topicSetStatusDefinition, sessionLogDefinition, cardCreateDefinition, cardReviewDefinition, cardRetireDefinition];
+export const objectiveCreateDefinition = define({
+  action: "OBJECTIVE_CREATE",
+  schema: strict({ title, evidenceStandard: text, topicId: id.optional(), aspirationId: id.optional() }),
+  describe: (p) => `Set learning objective: ${p.title}`,
+  run: (pid, p) => exp.createObjective(pid, p),
+  message: (_r, p) => `Objective set: ${p.title}`,
+}, target);
+
+/** Meeting an objective is the owner's claim and needs linked supporting evidence; abandoning needs a reason. */
+export const objectiveCloseDefinition = define({
+  action: "OBJECTIVE_CLOSE",
+  schema: strict({ objectiveId: id, outcome: z.enum(["MET", "ABANDONED"]), note: text.optional() }),
+  describe: (p) => `Mark objective ${p.objectiveId} ${p.outcome.toLowerCase()}`,
+  run: (pid, p) => exp.closeObjective(pid, p.objectiveId, p.outcome, p.note),
+  message: (_r, p) => `Objective ${p.outcome.toLowerCase()}.`,
+}, target);
+
+export const experimentCreateDefinition = define({
+  action: "EXPERIMENT_CREATE",
+  schema: strict({ hypothesis: text, method: text, objectiveId: id.optional() }),
+  describe: (p) => `Propose experiment: ${p.hypothesis}`,
+  run: (pid, p) => exp.createExperiment(pid, p),
+  message: () => "Experiment proposed (candidate).",
+}, target);
+
+export const experimentObserveDefinition = define({
+  action: "EXPERIMENT_OBSERVE",
+  schema: strict({ experimentId: id, text, observedAt: instant.optional() }),
+  describe: (p) => `Record an observation for experiment ${p.experimentId}`,
+  run: (pid, p) => exp.addObservation(pid, { experimentId: p.experimentId, text: p.text, observedAt: p.observedAt ? new Date(p.observedAt) : undefined }),
+  message: () => "Observation recorded.",
+}, target);
+
+export const experimentTransitionDefinition = define({
+  action: "EXPERIMENT_TRANSITION",
+  schema: strict({ experimentId: id, to: z.enum(["OBSERVED", "SUPPORTED", "CONFIRMED", "REJECTED"]), note: text.optional() }),
+  describe: (p) => `Move experiment ${p.experimentId} to ${p.to.toLowerCase()}`,
+  run: (pid, p) => exp.transitionExperiment(pid, p.experimentId, p.to, p.note),
+  message: (_r, p) => `Experiment is now ${p.to.toLowerCase()}.`,
+}, target);
+
+/** A lesson is explicit learning drawn from an experiment: a LESSON memory that references it. It never rewrites the experiment. */
+export const lessonRecordDefinition = define({
+  action: "LESSON_RECORD",
+  schema: strict({ experimentId: id, content: text }),
+  describe: (p) => `Record a lesson from experiment ${p.experimentId}`,
+  run: async (pid, p) => {
+    await exp.assertLessonSource(pid, p.experimentId);
+    return getMemoryProvider().addMemory({ principalId: pid, type: "LESSON", provenance: "EXPERIENCED", content: p.content, source: "learning.experiment", sourceRef: `experiment:${p.experimentId}` });
+  },
+  message: () => "Lesson recorded.",
+}, target);
+
+export const LEARNING_DEFINITIONS = [objectiveCreateDefinition, objectiveCloseDefinition, experimentCreateDefinition, experimentObserveDefinition, experimentTransitionDefinition, lessonRecordDefinition, topicCreateDefinition, topicUpdateDefinition, topicSetStatusDefinition, sessionLogDefinition, cardCreateDefinition, cardReviewDefinition, cardRetireDefinition];
 
 export function proposeLearning(identity: IdentityContext, action: string, parameters: unknown): Promise<Result> {
   return proposeAction(identity, { skillKey: SKILL_KEY, action, parameters });
@@ -94,3 +149,6 @@ export const readLearningOverview = (identity: IdentityContext, input: { agentKe
 export const readDueCards = (identity: IdentityContext, input: { agentKey: string; topicId?: string; limit?: number; now?: Date }) =>
   read(identity, input.agentKey, { op: "due", topicId: input.topicId ?? null, limit: input.limit ?? null }, (pid) => learning.dueCards(pid, input.now, { topicId: input.topicId, limit: input.limit }));
 export const readCard = (identity: IdentityContext, input: { agentKey: string; cardId: string; now?: Date }) => read(identity, input.agentKey, { op: "card", cardId: input.cardId }, (pid) => learning.getCard(pid, input.cardId, input.now));
+export const readObjectives = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "objectives" }, exp.listObjectives);
+export const readExperiments = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "experiments" }, exp.listExperiments);
+export const readExperiment = (identity: IdentityContext, input: { agentKey: string; experimentId: string }) => read(identity, input.agentKey, { op: "experiment", experimentId: input.experimentId }, (pid) => exp.getExperiment(pid, input.experimentId));

@@ -188,7 +188,7 @@ describe("GuideHub-ready API for the Life OS domains", () => {
     expect((await get(authA, "/reviews")).body.data.length).toBeGreaterThanOrEqual(1);
 
     const asp = await okAct("system.future", "ASPIRATION_CREATE", { title: "Flow asp", current: "c", desired: "d" });
-    const metric = await okAct("system.future", "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", baseline: 0, target: 10 });
+    const metric = await okAct("system.future", "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 10 });
     expect((await get(authA, `/future/aspirations/${asp.id}`)).body.data.progress).toBeNull();
     await okAct("system.future", "METRIC_READING_RECORD", { metricId: metric.id, value: 5 });
     expect((await get(authA, `/future/aspirations/${asp.id}`)).body.data.progress).toBeCloseTo(0.5);

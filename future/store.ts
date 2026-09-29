@@ -1,6 +1,7 @@
 import { getDb } from "../db/client/index.js";
 import { assertOwned, LifeNotFoundError, LifeStateError } from "../life/store.js";
 import { aspirationProgress, metricProgress } from "./progress.js";
+import { attachEvidenceTx, listEvidence, summarizeEvidence, type EvidenceInput } from "../evidence/store.js";
 
 // Future Self persistence. Principal-scoped in the same statement; references ownership-checked
 // here and again by DB triggers; terminal states final. Progress is computed on read (see
@@ -12,10 +13,43 @@ export interface AspirationInput { title: string; area?: string; current: string
 
 export async function createAspiration(principalId: string, d: AspirationInput) {
   await opt(principalId, "goal", d.goalId); await opt(principalId, "task", d.nextTaskId); await opt(principalId, "quest", d.nextQuestId);
-  return getDb().aspiration.create({ data: { principalId, ...d } });
+  // The aspiration and its INITIAL state are one atomic write, so history is complete from the first moment.
+  return getDb().$transaction(async (tx) => {
+    const a = await tx.aspiration.create({ data: { principalId, ...d } });
+    await tx.aspirationState.create({ data: { principalId, aspirationId: a.id, current: d.current, gap: d.gap ?? null, desired: d.desired, basis: "INITIAL" } });
+    return a;
+  });
 }
 
-export async function updateAspiration(principalId: string, id: string, d: { current?: string; desired?: string; gap?: string | null; goalId?: string | null; nextTaskId?: string | null; nextQuestId?: string | null }) {
+export interface StateEvidence { sourceKind: EvidenceInput["sourceKind"]; sourceId: string; stance: EvidenceInput["stance"]; note?: string }
+
+/**
+ * Record an UPDATED STATE: an immutable snapshot that must cite evidence (at least one link, at least one
+ * supporting or contradicting — context alone does not justify a change). The aspiration's mirror is
+ * written in the same transaction; the evidence that caused the state stays linked to it forever.
+ */
+export async function recordState(principalId: string, d: { aspirationId: string; current: string; gap?: string | null; desired: string; note?: string; evidence: StateEvidence[] }) {
+  if (!d.evidence.some((e) => e.stance !== "CONTEXT")) throw new LifeStateError("A state change needs at least one piece of supporting or contradicting evidence.");
+  return getDb().$transaction(async (tx) => {
+    const a = await tx.aspiration.findFirst({ where: { id: d.aspirationId, principalId }, select: { status: true } });
+    if (!a) throw new LifeNotFoundError("aspiration");
+    if (a.status !== "ACTIVE") throw new LifeStateError("That aspiration is closed and its state can't change.");
+    const state = await tx.aspirationState.create({ data: { principalId, aspirationId: d.aspirationId, current: d.current, gap: d.gap ?? null, desired: d.desired, basis: "EVIDENCED", note: d.note } });
+    for (const e of d.evidence) await attachEvidenceTx(tx, principalId, { subjectKind: "ASPIRATION_STATE", subjectId: state.id, ...e });
+    await tx.aspiration.updateMany({ where: { id: d.aspirationId, principalId, status: "ACTIVE" }, data: { current: d.current, gap: d.gap ?? null, desired: d.desired } });
+    return state;
+  });
+}
+
+/** Timeline of states, each with the evidence that caused it. */
+export async function stateTimeline(principalId: string, aspirationId: string) {
+  const db = getDb();
+  if (!(await db.aspiration.findFirst({ where: { id: aspirationId, principalId }, select: { id: true } }))) throw new LifeNotFoundError("aspiration");
+  const states = await db.aspirationState.findMany({ where: { principalId, aspirationId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 200 });
+  return Promise.all(states.map(async (s) => { const ev = await listEvidence(principalId, "ASPIRATION_STATE", s.id); return { ...s, evidence: ev, evidenceSummary: summarizeEvidence(ev) }; }));
+}
+
+export async function updateAspiration(principalId: string, id: string, d: { goalId?: string | null; nextTaskId?: string | null; nextQuestId?: string | null }) {
   await opt(principalId, "goal", d.goalId); await opt(principalId, "task", d.nextTaskId); await opt(principalId, "quest", d.nextQuestId);
   const r = await getDb().aspiration.updateMany({ where: { id, principalId, status: "ACTIVE" }, data: d });
   if (r.count === 0) return missOrClosed(principalId, id);
@@ -35,7 +69,7 @@ async function missOrClosed(principalId: string, id: string): Promise<never> {
   throw new LifeStateError(`That aspiration is ${row.status.toLowerCase()} and can't be changed.`);
 }
 
-export async function createMetric(principalId: string, d: { aspirationId: string; name: string; unit: string; baseline: number; target: number }) {
+export async function createMetric(principalId: string, d: { aspirationId: string; name: string; unit: string; definition: string; baseline: number; target: number }) {
   if (d.baseline === d.target) throw new LifeStateError("A metric's baseline and target must differ.");
   const a = await getDb().aspiration.findFirst({ where: { id: d.aspirationId, principalId }, select: { status: true } });
   if (!a) throw new LifeNotFoundError("aspiration");
@@ -43,14 +77,14 @@ export async function createMetric(principalId: string, d: { aspirationId: strin
   return getDb().metric.create({ data: { principalId, ...d } });
 }
 
-export async function recordReading(principalId: string, d: { metricId: string; value: number; observedAt?: Date; resultId?: string; note?: string }, now = new Date()) {
+export async function recordReading(principalId: string, d: { metricId: string; value: number; observedAt?: Date; resultId?: string; provenance?: "OWNER_REPORTED" | "MEASURED" | "DERIVED"; note?: string }, now = new Date()) {
   const m = await getDb().metric.findFirst({ where: { id: d.metricId, principalId }, include: { aspiration: { select: { status: true } } } });
   if (!m) throw new LifeNotFoundError("metric");
   if (m.aspiration.status !== "ACTIVE") throw new LifeStateError("That aspiration is closed.");
   const observedAt = d.observedAt ?? now;
   if (observedAt.getTime() > now.getTime() + 5 * 60_000) throw new LifeStateError("A reading can't be from the future.");
   await opt(principalId, "result", d.resultId);
-  return getDb().metricReading.create({ data: { principalId, metricId: d.metricId, value: d.value, observedAt, resultId: d.resultId, note: d.note } });
+  return getDb().metricReading.create({ data: { principalId, metricId: d.metricId, value: d.value, observedAt, resultId: d.resultId, provenance: d.provenance, note: d.note } });
 }
 
 type Db = ReturnType<typeof getDb>;
@@ -59,7 +93,7 @@ async function withProgress(db: Db, principalId: string, aspirations: { id: stri
   const metrics = await db.metric.findMany({ where: { principalId, aspirationId: { in: ids } }, include: { readings: { orderBy: [{ observedAt: "asc" }, { createdAt: "asc" }], take: 500 } }, orderBy: { createdAt: "asc" } });
   return aspirations.map((a) => {
     const ms = metrics.filter((m) => m.aspirationId === a.id).map((m) => ({
-      id: m.id, name: m.name, unit: m.unit, baseline: m.baseline, target: m.target,
+      id: m.id, name: m.name, unit: m.unit, definition: m.definition, baseline: m.baseline, target: m.target,
       ...metricProgress(m, m.readings),
       evidenced: m.readings.filter((r) => r.resultId).length,
     }));

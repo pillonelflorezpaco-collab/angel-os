@@ -51,13 +51,15 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
     const task = await db().task.create({ data: { principalId: a, title: "Buy shoes" } });
     const asp = await aspire({ gap: "no routine", nextTaskId: task.id, area: "health" });
     expect(asp).toMatchObject({ principalId: a, current: "out of shape", gap: "no routine", desired: "run a 10k", nextTaskId: task.id, status: "ACTIVE" });
-    const updated = await ok(idA(), "ASPIRATION_UPDATE", { aspirationId: asp.id, current: "running twice a week", nextTaskId: null });
-    expect(updated).toMatchObject({ current: "running twice a week", nextTaskId: null, desired: "run a 10k" });
+    const updated = await ok(idA(), "ASPIRATION_UPDATE", { aspirationId: asp.id, nextTaskId: null });
+    expect(updated).toMatchObject({ current: "out of shape", nextTaskId: null, desired: "run a 10k" });
+    // CURRENT/GAP/DESIRED can no longer be edited in place — only recorded as an evidenced state (future-learning.test.ts).
+    await failed(idA(), "ASPIRATION_UPDATE", { aspirationId: asp.id, current: "running twice a week" });
   });
 
   it("NO progress figure exists until there is evidence, and progress is derived, never stored", async () => {
     const asp = await aspire();
-    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "10k time", unit: "min", baseline: 70, target: 55 });
+    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "10k time", unit: "min", definition: "how it is measured", baseline: 70, target: 55 });
     let view = (await readAspiration(idA(), { ...readA, aspirationId: asp.id })).data as any;
     expect(view.progress).toBeNull();
     expect(view.metrics[0]).toMatchObject({ progress: null, readings: 0, latest: null });
@@ -73,7 +75,7 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
 
   it("reaching the target NEVER closes the aspiration; only the owner does, once, and it is final", async () => {
     const asp = await aspire();
-    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "km", unit: "km", baseline: 0, target: 10 });
+    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "km", unit: "km", definition: "how it is measured", baseline: 0, target: 10 });
     await ok(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 12 });
     const view = (await readAspiration(idA(), { ...readA, aspirationId: asp.id })).data as any;
     expect(view).toMatchObject({ progress: 1, status: "ACTIVE" });
@@ -86,25 +88,25 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
     await failed(idA(), "ASPIRATION_RELEASE", { aspirationId: asp.id, reason: "changed my mind" });
     await failed(idA(), "ASPIRATION_UPDATE", { aspirationId: asp.id, desired: "moved goalposts" });
     await failed(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 1 });
-    await failed(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "late", unit: "u", baseline: 0, target: 1 });
+    await failed(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "late", unit: "u", definition: "how it is measured", baseline: 0, target: 1 });
     await expect(db().aspiration.update({ where: { id: asp.id }, data: { status: "ACTIVE", closedAt: null } })).rejects.toThrow();
     expect((await db().activity.findMany({ where: { principalId: a, refId: asp.id } })).map((x) => x.type)).toEqual(["ACHIEVEMENT"]);
   });
 
   it("metrics are fixed at creation (no moving goalposts) and readings are append-only, also at the database", async () => {
     const asp = await aspire();
-    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", baseline: 0, target: 100 });
+    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 100 });
     const reading = await ok(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 10 });
     await expect(db().metric.update({ where: { id: metric.id }, data: { target: 20 } })).rejects.toThrow(/append-only/);
     await expect(db().metricReading.update({ where: { id: reading.id }, data: { value: 99 } })).rejects.toThrow(/append-only/);
     expect((await proposeFuture(idA(), "METRIC_UPDATE", { metricId: metric.id, target: 20 })).status).toBe("FAILED"); // no such action
     await expect(db().metric.create({ data: { principalId: a, aspirationId: asp.id, name: "flat", unit: "u", baseline: 5, target: 5 } })).rejects.toThrow();
-    await failed(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "flat", unit: "u", baseline: 5, target: 5 });
+    await failed(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "flat", unit: "u", definition: "how it is measured", baseline: 5, target: 5 });
   });
 
   it("a later, worse reading lowers progress: nothing ratchets", async () => {
     const asp = await aspire();
-    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", baseline: 0, target: 100 });
+    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 100 });
     await ok(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 90, observedAt: new Date(Date.now() - 48 * HOUR).toISOString() });
     await ok(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 30, observedAt: new Date(Date.now() - 24 * HOUR).toISOString() });
     expect(((await readAspiration(idA(), { ...readA, aspirationId: asp.id })).data as any).metrics[0].progress).toBeCloseTo(0.3);
@@ -115,7 +117,7 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
 
   it("readings cannot come from the future; a result may back a reading, and it must be the owner's", async () => {
     const asp = await aspire();
-    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", baseline: 0, target: 10 });
+    const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 10 });
     await failed(idA(), "METRIC_READING_RECORD", { metricId: metric.id, value: 5, observedAt: new Date(Date.now() + 24 * HOUR).toISOString() });
     const goal = await db().goal.create({ data: { principalId: a, title: "G" } });
     const result = (await proposeLife(idA(), "RESULT_RECORD", { subjectKind: "GOAL", subjectId: goal.id, statement: "ran 5k" })).data as { id: string };
@@ -132,14 +134,14 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
   describe("isolation", () => {
     it("another principal cannot see, read, extend or close any of it; DB triggers refuse foreign references", async () => {
       const asp = await aspire();
-      const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", baseline: 0, target: 10 });
+      const metric = await ok(idA(), "METRIC_CREATE", { aspirationId: asp.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 10 });
       expect(JSON.stringify((await readFutureOverview(idB(), readA)).data)).not.toContain(asp.id);
       expect((await readAspiration(idB(), { ...readA, aspirationId: asp.id })).status).toBe("FAILED");
       for (const [action, params] of [
-        ["ASPIRATION_UPDATE", { aspirationId: asp.id, current: "hijack" }],
+        ["ASPIRATION_UPDATE", { aspirationId: asp.id, nextTaskId: null }],
         ["ASPIRATION_ACHIEVE", { aspirationId: asp.id }],
         ["ASPIRATION_RELEASE", { aspirationId: asp.id, reason: "x" }],
-        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", baseline: 0, target: 1 }],
+        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", definition: "how it is measured", baseline: 0, target: 1 }],
         ["METRIC_READING_RECORD", { metricId: metric.id, value: 5 }],
       ] as const) expect((await failed(idB(), action, params)).message, action).toMatch(/wasn't found/);
       const foreignTask = await db().task.create({ data: { principalId: b, title: "B task" } });
@@ -176,8 +178,8 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
         ["ASPIRATION_CREATE", { title: "x", current: "c", desired: "d", area: "Not A Slug!" }],
         ["ASPIRATION_UPDATE", { aspirationId: asp.id }],
         ["ASPIRATION_UPDATE", { aspirationId: asp.id, status: "ACHIEVED" }],
-        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", baseline: 0, target: 1, progress: 1 }],
-        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", baseline: "0", target: 1 }],
+        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", definition: "how it is measured", baseline: 0, target: 1, progress: 1 }],
+        ["METRIC_CREATE", { aspirationId: asp.id, name: "x", unit: "u", definition: "how it is measured", baseline: "0", target: 1 }],
         ["METRIC_READING_RECORD", { metricId: asp.id, value: Number.POSITIVE_INFINITY }],
         ["METRIC_READING_RECORD", { metricId: asp.id, value: 1, xp: 10 }],
       ] as const) expect((await proposeFuture(idA(), action, params)).status, action + JSON.stringify(params)).toBe("FAILED");
@@ -205,7 +207,7 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
       const keep = await aspire({ title: "keep" }, who);
       const gone = await aspire({ title: "gone" }, who);
       await ok(who, "ASPIRATION_RELEASE", { aspirationId: gone.id, reason: "no longer me" });
-      const m = await ok(who, "METRIC_CREATE", { aspirationId: keep.id, name: "m", unit: "u", baseline: 0, target: 4 });
+      const m = await ok(who, "METRIC_CREATE", { aspirationId: keep.id, name: "m", unit: "u", definition: "how it is measured", baseline: 0, target: 4 });
       await ok(who, "METRIC_READING_RECORD", { metricId: m.id, value: 1 });
       const overview = (await readFutureOverview(who, readA)).data as any[];
       expect(overview.map((x) => x.title)).toEqual(["keep"]);
