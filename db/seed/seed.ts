@@ -41,6 +41,12 @@ async function main() {
     create: { key: "system.decisions", name: "System Decisions", description: "Decision history." },
   });
 
+  const activitySkill = await db.skill.upsert({
+    where: { key: "system.activity" },
+    update: {},
+    create: { key: "system.activity", name: "System Activity", description: "Read the user-facing activity stream (life history)." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -91,6 +97,8 @@ async function main() {
       state: "ALLOWED",
       skillId: decisionsSkill.id,
     },
+    // system.activity — reading the life-history stream ("What happened today?").
+    { resource: "angel:activity", action: "ACTIVITY_READ", category: "READ", state: "ALLOWED", skillId: activitySkill.id },
     // integrations.calendar — the ONE permission this build seeds:
     // CALENDAR/READ. No WRITE or EXECUTE row is seeded for this skill —
     // their absence means DENIED by the gateway's fail-closed default,
@@ -142,7 +150,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${tasksSkill.key}, ${memorySkill.key}, ${decisionsSkill.key}, ${calendarSkill.key}, ${gmailSkill.key}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${tasksSkill.key}, ${memorySkill.key}, ${decisionsSkill.key}, ${activitySkill.key}, ${calendarSkill.key}, ${gmailSkill.key}`
   );
 }
 

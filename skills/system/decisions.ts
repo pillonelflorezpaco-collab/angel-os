@@ -16,7 +16,7 @@ export interface QueryDecisionsInput {
 }
 
 export async function queryDecisions(input: QueryDecisionsInput): Promise<Result> {
-  return gatewayExecute(
+  const result = await gatewayExecute(
     {
       principalId: input.principalId,
       agentKey: input.agentKey,
@@ -34,4 +34,12 @@ export async function queryDecisions(input: QueryDecisionsInput): Promise<Result
     },
     "skill.system.decisions"
   );
+  if (result.status !== "EXECUTED") return result;
+  const decisions = result.data as { title: string; decision: string }[];
+  return {
+    ...result,
+    message: decisions.length
+      ? `Decisions about "${input.topic}":\n` + decisions.map((d) => `• ${d.title}: ${d.decision}`).join("\n")
+      : `No recorded decision about "${input.topic}".`,
+  };
 }

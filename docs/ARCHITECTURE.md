@@ -45,6 +45,15 @@ to run. Nothing below assumes BlackOS is reachable.
   the shape stays ready for more than one principal later, but v0.1
   implements exactly one.
 
+## Interfaces and identity (Build #5)
+
+Every interface — HTTP/GuideHub, Telegram, voice, mobile — is a thin adapter
+into the same backend: `Interface → Authentication/Identity → dispatcher →
+Jarvis Core → Skill → Gateway → Data/Connector → Audit`. The principal comes
+from a credential, never from the client, and audit and activity rows record
+which interface a request came from. See
+`docs/architecture/interfaces-and-identity.md` and `docs/api/README.md`.
+
 ## Pipeline
 
 ```

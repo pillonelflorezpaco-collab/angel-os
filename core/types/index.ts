@@ -10,6 +10,8 @@ export type IntentName =
   | "memory.search"
   | "decision.query"
   | "calendar.today"
+  | "activity.today"
+  | "activity.week"
   | "unknown";
 
 export interface Intent {
@@ -51,4 +53,6 @@ export interface Result {
   message: string;
   data?: unknown;
   approvalId?: string;
+  /** The action really ran (status EXECUTED) but its audit row could not be written. */
+  auditUnconfirmed?: boolean;
 }

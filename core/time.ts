@@ -105,3 +105,31 @@ export function formatLocalTime(instant: Date, timeZone: string): string {
   const p = localParts(instant, timeZone);
   return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
+
+export type LocalRange = "today" | "yesterday" | "week";
+
+const WEEKDAY_INDEX: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
+/** Days since Monday (Mon = 0) for the user's local date at `instant`. */
+function localWeekdayIndex(instant: Date, timeZone: string): number {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(instant);
+  return WEEKDAY_INDEX[name] ?? 0;
+}
+
+/**
+ * UTC bounds [start, end) for a user-relative range: "today", "yesterday",
+ * or "week" (this calendar week, Monday 00:00 in the user's timezone up to
+ * the end of their current day).
+ */
+export function localRangeBounds(now: Date, timeZone: string, range: LocalRange): { start: Date; end: Date } {
+  switch (range) {
+    case "today":
+      return localDayBounds(now, timeZone, 0);
+    case "yesterday":
+      return localDayBounds(now, timeZone, -1);
+    case "week": {
+      const sinceMonday = localWeekdayIndex(now, timeZone);
+      return { start: localDayBounds(now, timeZone, -sinceMonday).start, end: localDayBounds(now, timeZone, 0).end };
+    }
+  }
+}

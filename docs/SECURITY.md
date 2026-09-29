@@ -52,88 +52,42 @@ placeholder, not an implemented skill)
 
 ## Approval workflow
 
-When a permission's state is `APPROVAL_REQUIRED`, `gatewayExecute` does not
-run the action. It creates an `ApprovalRequest` row (`status: PENDING`) with
-the requested resource, action, and parameters, and returns
-`{ status: "PENDING_APPROVAL", approvalId }` to the caller instead of a
-result. The action only runs once a human decision moves the approval to
-`APPROVED` — v0.1 has no code path that executes a pending action
-automatically, on a timer, or on re-request.
+Implemented in Build #6 — full design in `docs/architecture/approval-and-execution.md`.
+Three distinct steps, three distinct actors: **PROPOSE** (Jarvis/Core/a skill
+asks), **APPROVE** (the human decides), **EXECUTE** (only the execution layer
+acts). An approval authorizes **one exact action**: principal, skill, resource,
+action and the exact validated parameters are stored at proposal time, hashed
+(SHA-256 over a canonical serialization), and made immutable by a database
+trigger. Execution loads those stored values — never anything supplied by
+whoever presses "approve".
 
-`decideApproval(principalId, approvalId, "APPROVED" | "REJECTED")`:
-- Requires the deciding `principalId` and only matches an approval that
-  belongs to it — the WHERE clause on the update itself is
-  `{ id, principalId, status: "PENDING" }`, so an approval belonging to a
-  different principal is never fetched, never mutated, and produces the
-  same `ApprovalOwnershipError` as a nonexistent id (no oracle for
-  enumerating other principals' approval ids).
-- Refuses to decide an approval that isn't `PENDING` (no double-deciding),
-  and does so atomically: the PENDING→APPROVED/REJECTED transition is one
-  `updateMany` conditioned on `status: "PENDING"`, not a separate read then
-  write — see "Approval decisions are atomic" below.
-- Writes `ACTION_APPROVED` or `ACTION_REJECTED` to the audit log on success,
-  and `ACTION_DENIED` (never a misleading `ACTION_APPROVED`/`ACTION_REJECTED`)
-  when ownership fails.
-- v0.1 does **not** automatically execute the underlying action on
-  approval — approving records the decision; wiring approval → actual
-  execution is deferred (see `docs/ROADMAP.md` and "Approval execution
-  contract" below), since no sensitive skill (Gmail send, calendar delete,
-  money transfer) is implemented yet to execute.
+Guarantees (each covered by tests and by a mutation run, see the Build #6 report):
 
-### Approval decisions are atomic (no TOCTOU)
+- **State machine**: `PENDING → APPROVED → CONSUMED`, `PENDING → DENIED`,
+  `PENDING|APPROVED → EXPIRED`; `DENIED/EXPIRED/CONSUMED` are terminal. Enforced
+  in code (`gateway/approvals/state.ts`) **and** by a Postgres trigger.
+- **Expiry** is enforced wherever an approval is read, decided, or executed
+  (lazy, deterministic clock in `gateway/clock.ts`), plus in the SQL `WHERE`
+  of the approve/consume transitions. No worker is required for correctness.
+- **Ownership**: every query carries the authenticated `principalId`; another
+  principal's approval and a nonexistent one both answer "Approval not found."
+- **Atomic and single-use**: each transition is one conditional `UPDATE`; of any
+  number of concurrent approvals/executions exactly one wins, and the action
+  runs at most once (claim = `APPROVED → CONSUMED` before anything executes).
+- **Approval never overrides permission**: permission is re-checked at execution;
+  a revoked permission wins. Interface policy can only tighten (voice cannot
+  approve sensitive actions; dangerous actions are refused on voice).
+- **Closures fail closed**: `gatewayExecute` no longer creates approvals for
+  closures (a closure cannot be "the approved action"); approval-gated actions
+  must be registered `ActionDefinition`s run through `proposeAction`.
+- **Audit**: `APPROVAL_CREATED/APPROVED/DENIED/EXPIRED/CONSUMED`,
+  `ACTION_EXECUTION_STARTED/SUCCEEDED/FAILED` with principal, interface and
+  request id; never parameters, tokens or raw errors.
 
-`gateway/approvals/index.ts`'s `decideApproval` does not read the approval's
-status and then separately write a new status — that read-then-write gap is
-exactly where a race would live (two concurrent requests could both observe
-`PENDING` before either writes). Instead the check and the write are the
-same SQL statement:
-`UPDATE approval_requests SET status = ... WHERE id = ... AND principalId = ... AND status = 'PENDING'`.
-Postgres serializes concurrent updates to the same row; of two simultaneous
-decisions, only the one that reaches the row first can still match
-`status = 'PENDING'` — the loser's `WHERE` no longer matches (the row
-already changed) and its `count` comes back `0`, which surfaces as
-`ApprovalNotPendingError`. One approval can never be successfully decided
-twice, under concurrency or otherwise.
-
-### Approval execution contract (binding, not yet implemented)
-
-This is the contract that governs the still-unbuilt approval → execution
-wiring (see `docs/ROADMAP.md`), written down now so nothing implements it
-incorrectly later:
-
-An `ApprovalRequest` authorizes **one exact action**, not a category of
-action. It binds `principalId`, `agentId`, `skillKey`, `resource`, `action`,
-and `parameters` together at creation time (`createApprovalRequest`,
-`gateway/approvals/index.ts`).
-
-When execution-on-approval is eventually built, it **must**:
-1. Load the stored `ApprovalRequest` by id.
-2. Verify `approval.principalId` matches the caller (already enforced by
-   `decideApproval`).
-3. Verify `approval.status === "PENDING"`.
-4. Atomically consume the approval (flip it to a terminal, one-time-use
-   state) as part of the same operation that triggers execution — reusing
-   the same conditional-`updateMany` pattern `decideApproval` already uses,
-   so approving and executing can't be split into two separately-racy
-   steps.
-5. Execute using **only** `approval.resource`, `approval.action`, and
-   `approval.parameters` as stored — **never** parameters supplied fresh by
-   whatever caller is triggering execution.
-
-Concretely, this is **wrong**:
-```
-approve(approvalId) → execute(callerProvidedParameters)
-```
-and this is the required shape:
-```
-approve(approvalId) → load stored approval → verify ownership → verify PENDING
-                     → atomically consume → execute(approval.resource, approval.action, approval.parameters)
-```
-An approval must never be reusable to authorize a different resource,
-action, or parameter set than the one that was actually shown to and
-approved by the principal (e.g., "approved sending an email to John" must
-never be reusable to send to someone else). No execution code exists yet —
-this section exists so the first implementation is correct.
+Limitations: at-most-once, not exactly-once — if the process dies after the
+claim, the action is not re-run automatically (`executionStatus` stays
+`STARTED`); external providers must be given `ctx.idempotencyKey` (the
+approval id) to make their own retries safe. See the architecture doc.
 
 ## Audit log
 
@@ -270,6 +224,25 @@ external credentials (once implemented) should hold a reference (an env var
 name, a secrets-manager key) — never the secret itself — following the same
 "credential reference indirection" principle carried over from `jarvis-1.0`.
 
+## Identity and interfaces
+
+Full design: `docs/architecture/interfaces-and-identity.md`. Security
+properties, each covered by tests that were verified to fail when the
+control is removed:
+
+- Every `/api/*` request needs a bearer token; there is no fallback
+  identity. Only a SHA-256 hash of a token is stored; plaintext is shown once.
+- The principal and the interface come from the credential. A client-supplied
+  `principalId` (body at any depth, query, `X-Principal-Id`) is rejected `400`.
+- Inside a request, `gatewayExecute` refuses any action whose principal
+  differs from the authenticated one, and audit rows carry `interfaceSource`
+  and `requestId`.
+- Adapters (`interfaces/`) cannot import the database, skills, or the gateway
+  (`tests/interfaces-boundary.test.ts`); Telegram answers only linked
+  private chats and never propagates errors that could contain the bot token.
+- Async route errors reach a sanitizing handler instead of stopping the
+  process (the Express 4 issue previously listed under "Error handling").
+
 ## Error handling
 
 Raw internal error text never reaches the user or the audit log.
@@ -289,12 +262,9 @@ Raw internal error text never reaches the user or the audit log.
   private keys, `key=value` secrets). This is best-effort defence in depth,
   not permission to put secrets in errors.
 
-Known gap: Express 4 does not catch rejected promises in async route
-handlers. An error thrown directly in a route (outside `JarvisCore` or a
-skill — e.g. the database being unreachable in `getOrCreatePrincipal`)
-does not leak text, but becomes an unhandled rejection, which under
-Node's default behaviour terminates the API process. See
-`docs/architecture/current-state.md`.
+Async route handlers are wrapped (`asyncRoute` in `api/middleware.ts`), so an
+unexpected error reaches a terminal handler that returns a generic 500 and
+logs the redacted detail; it no longer stops the process.
 
 ## Time and timezones
 
@@ -315,18 +285,13 @@ inside their gateway executor, after the permission check.
 
 ## Known limitations in v0.1 (tracked in docs/ROADMAP.md)
 
-- No authentication layer yet — the API has no auth middleware; it assumes
-  a single trusted caller (Angel, locally). `getOrCreatePrincipal()`
-  (`api/server.ts`) resolves whichever principal Postgres returns first —
-  correct only because exactly one principal is ever seeded today. Do not
-  expose this API on the open internet, and do not seed a second principal
-  without adding real authentication first. This also applies to
-  `/api/integrations/google/calendar/connect` — it starts the OAuth flow
-  for whichever principal `getOrCreatePrincipal()` resolves, for the same
-  reason. `OAuthStateService`'s principal-binding (see "OAuth state
-  security" above) protects the *callback* from being redirected to the
-  wrong principal; it does not by itself add authentication to who can hit
-  `/connect` in the first place.
+- **Authentication is a static bearer token** (Build #5). Real, but minimal:
+  tokens don't expire (revocation only), there is no rate limiting, and
+  issuance is CLI-only. Production authentication (sessions, OIDC,
+  passkeys) is a new `Authenticator` — see
+  `docs/architecture/interfaces-and-identity.md`. `/connect` now starts the
+  flow for the *authenticated* principal; the earlier "whichever principal
+  Postgres returns first" limitation no longer exists.
 - Approval decisions are not yet wired to automatically trigger the
   originally-requested action; there is no sensitive skill implemented yet
   for this to matter in practice. See "Approval execution contract" above

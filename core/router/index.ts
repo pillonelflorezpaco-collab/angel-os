@@ -40,14 +40,22 @@ export function parseIntent(raw: string): Intent {
     return { name: "memory.remember", raw: text, slots: { content } };
   }
 
-  if (/^(what do i know about|search (my )?memory)/i.test(lower)) {
-    const query = text.replace(/^(what do i know about|search (my )?memory( for)?)/i, "").trim();
+  if (/^(what do i know about|what did i learn about|search (my )?memory)/i.test(lower)) {
+    const query = text.replace(/^(what do i know about|what did i learn about|search (my )?memory( for)?)/i, "").replace(/[?.!]+$/, "").trim();
     return { name: "memory.search", raw: text, slots: { query } };
   }
 
   if (/^what did i decide about /i.test(lower)) {
     const topic = text.replace(/^what did i decide about /i, "").trim();
     return { name: "decision.query", raw: text, slots: { topic } };
+  }
+
+  if (/^(what happened today|what did i do today|what have i done today)/i.test(lower)) {
+    return { name: "activity.today", raw: text, slots: {} };
+  }
+
+  if (/^(what have i done this week|what did i do this week|what happened this week)/i.test(lower)) {
+    return { name: "activity.week", raw: text, slots: {} };
   }
 
   if (/^(what do i have today|what.?s on my calendar( today)?|what are my calendar events( today)?)/i.test(lower)) {

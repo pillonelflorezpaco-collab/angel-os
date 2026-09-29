@@ -3,16 +3,23 @@ import { planFromIntent } from "./planner/index.js";
 import { createTask, listTasks, listReminders, createRelativeReminder } from "../skills/system/tasks.js";
 import { remember, search as searchMemory, describeMemory } from "../skills/system/memory.js";
 import { queryDecisions } from "../skills/system/decisions.js";
+import { listActivity, summarizeActivity } from "../skills/system/activity.js";
 import { today as calendarToday, formatEventsAsContext, type TodayResult } from "../skills/integrations/calendar.js";
 import type { MemoryRecord } from "../memory/types/index.js";
+import { JARVIS_AGENT_KEY } from "../skills/agent.js";
+import { registerSkillActions } from "../skills/manifest.js";
+import type { IdentityContext } from "../identity/index.js";
 import { toSafeError, logInternalError } from "./errors.js";
 import type { Result } from "./types/index.js";
 
-export const JARVIS_AGENT_KEY = "jarvis-core";
+export { JARVIS_AGENT_KEY };
+registerSkillActions();
 
 export interface JarvisRequest {
   principalId: string;
   input: string;
+  /** The authenticated identity. Required for anything that proposes an action (reminders, memories). */
+  identity?: IdentityContext;
 }
 
 /**
@@ -30,6 +37,8 @@ export interface JarvisRequest {
  * and ready for the future LLM planner that will consume it — see
  * context/retrieval/index.ts.
  */
+const NO_IDENTITY: Result = { status: "FAILED", message: "I can't do that without knowing who you are." };
+
 export class JarvisCore {
   async handle(request: JarvisRequest): Promise<Result> {
     try {
@@ -50,11 +59,8 @@ export class JarvisCore {
     switch (intent.name) {
       case "memory.remember": {
         const content = intent.slots.content ?? request.input;
-        return remember({
-          principalId: request.principalId,
-          agentKey: JARVIS_AGENT_KEY,
-          memory: { type: "FACT", content, source: "jarvis-core:user-input" },
-        });
+        if (!request.identity) return NO_IDENTITY;
+        return remember(request.identity, { type: "FACT", content, source: "jarvis-core:user-input" });
       }
 
       case "memory.search": {
@@ -84,6 +90,12 @@ export class JarvisCore {
         });
       }
 
+      case "activity.today":
+        return listActivity({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY, range: "today" });
+
+      case "activity.week":
+        return summarizeActivity({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY, range: "week" });
+
       case "reminder.list":
         return listReminders({ principalId: request.principalId, agentKey: JARVIS_AGENT_KEY });
 
@@ -109,16 +121,17 @@ export class JarvisCore {
         if (!plan) {
           return { status: "FAILED", message: "No plan could be derived for this intent." };
         }
-        return this.executePlan(request.principalId, plan.action, plan.parameters);
+        return this.executePlan(request, plan.action, plan.parameters);
       }
     }
   }
 
   private async executePlan(
-    principalId: string,
+    request: JarvisRequest,
     action: string,
     parameters: Record<string, unknown>
   ): Promise<Result> {
+    const principalId = request.principalId;
     switch (action) {
       case "CREATE_TASK":
         return createTask({
@@ -135,9 +148,8 @@ export class JarvisCore {
           return { status: "FAILED", message: "That time isn't valid. Use a 24-hour time like 10 or 14:30." };
         }
         // Interpreted as "tomorrow" in the principal's timezone by the skill.
-        return createRelativeReminder({
-          principalId,
-          agentKey: JARVIS_AGENT_KEY,
+        if (!request.identity) return NO_IDENTITY;
+        return createRelativeReminder(request.identity, {
           message: String(parameters.message ?? "Reminder"),
           dayOffset: 1,
           hour,

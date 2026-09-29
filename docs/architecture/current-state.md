@@ -102,3 +102,33 @@ needed.
 Still open: F2 (approval expiry — deliberately deferred to the approval
 execution build), F3, F8, F9, F10, F11, and the Express 4 async-route
 issue described in `docs/SECURITY.md` "Error handling".
+
+## Build #5 update
+
+Resolved: the single-principal `findFirst()` API (all routes now require a
+credential-bound identity), the Express-4 async-route process crash, and the
+absence of any record of which interface a request came from. Still open
+from the audit: F2 (approval expiry), F3 (approved actions cannot execute),
+F8 (reminders never fire), F9 (audit/approvals reads not skill-gated), F10
+(privacy classification, memory retract/delete), F11 (no lint/structured
+logging). New limitations are listed in
+`docs/architecture/interfaces-and-identity.md`.
+
+## Build #6 update
+
+Resolved: **F2** (approval expiry is enforced at read/decision/execution) and
+**F3** (approved actions now execute from the stored, hashed parameters via
+registered `ActionDefinition`s, at most once). Still open: F8 (reminders never
+fire), F9, F10, F11. No production skill uses the approval path yet — the
+engine is exercised by deterministic fake actions in tests. Details:
+`docs/architecture/approval-and-execution.md`.
+
+## Build #7 update
+
+Resolved from the Build #6.5 audit: legacy closure path can no longer run non-READ
+actions except two explicit allow-listed writes (F: "two ways of doing the same thing"),
+the engine has production ActionDefinitions and a registry bootstrap, SYSTEM identity
+exists, audit-after-effect no longer misreports, identity administration is audited,
+reminders are delivered (F8). Still open: `CREATE_TASK` and memory mutations on the
+legacy allow-list, F9 (audit/approvals read routes), F10, F11, the GuideHub API
+envelope inconsistencies. Details: `docs/architecture/reminders-and-delivery.md`.

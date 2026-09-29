@@ -117,6 +117,38 @@ vision's core shape. Concrete gaps this pass surfaced, not yet built:
 - **Working/conversational memory persistence**: intentionally still not
   persisted — see `docs/decisions/0002-memory-architecture.md`.
 
+## Build #5 — Interface & identity layer
+
+Done: credential-bound `IdentityContext` (API tokens, linked external
+accounts) replacing `findFirst()`; client `principalId` rejected; interface
+registry stamped on audit/activity via a request context; gateway refuses
+principal mismatches; one dispatcher; Telegram adapter + Bot API client +
+poller; voice abstraction; activity stream (separate from audit); GuideHub
+API contract; async-route error handling. One additive migration
+(`add_identity_interfaces_activity`). Telegram was verified with fakes only.
+See `docs/architecture/interfaces-and-identity.md`.
+
+## Build #6 — Approval & execution engine
+
+Done: explicit approval state machine (DB-enforced), lazy deterministic expiry,
+exact action binding (canonical JSON + SHA-256, immutable rows), principal-scoped
+atomic decide/claim, `ActionDefinition` execution boundary, interface approval
+policy (voice stricter), GuideHub/API approve/deny contract (API v2), Telegram
+inline Approve/Deny buttons and `/pending`, lifecycle audit events. One migration
+(`approval_execution_engine`). No real external action was added. See
+`docs/architecture/approval-and-execution.md`. Next: reminder delivery, then a
+first real approval-gated skill (Gmail draft/send).
+
+## Build #7 — Reminder engine + execution-path guardrails
+
+Done: `gatewayExecute` is a READ lane (explicit temporary write allow-list); SYSTEM
+identity; `CREATE_REMINDER` and `remember` as production ActionDefinitions (voice needs
+approval); reminder delivery lifecycle with atomic claim + leases; `DeliveryPort` +
+Telegram port; separate worker (`npm run worker`); truthful audit semantics; identity
+administration audit; execution-path import boundaries. Additive migration
+`reminder_delivery_system_identity`. See `docs/architecture/reminders-and-delivery.md`.
+Next candidates: migrate `CREATE_TASK`/memory mutations, GuideHub API cleanups, Gmail.
+
 ## Principal-architect audit (supersedes the Build #4 recommendation below)
 
 A verified audit (`docs/architecture/current-state.md`) found gaps the

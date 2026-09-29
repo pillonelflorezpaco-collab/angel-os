@@ -2,6 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { disconnectDb } from "../db/client/index.js";
 import { setPermission } from "../gateway/permissions/index.js";
 import * as memorySkill from "../skills/system/memory.js";
+import { grant } from "./helpers/fixtures.js";
+import { JARVIS_AGENT_KEY } from "../core/index.js";
+import { identityFor } from "./helpers/fakeActions.js";
 import { seedTestFixtures, cleanupPrincipal, cleanupAgentAndSkill } from "./setup.js";
 
 /**
@@ -52,28 +55,13 @@ describe("skills/system/memory.ts — routes through the gateway", () => {
     const searchResult = await memorySkill.search({ principalId, agentKey, query: { query: "anything" } });
     expect(searchResult.status).toBe("EXECUTED");
 
-    const rememberResult = await memorySkill.remember({
-      principalId,
-      agentKey,
-      memory: { type: "FACT", content: "should be denied", source: "test" },
-    });
+    const rememberResult = await memorySkill.remember(identityFor(principalId), { type: "FACT", content: "should be denied", source: "test" });
     expect(rememberResult.status).toBe("DENIED");
 
-    await setPermission({
-      principalId,
-      agentKey,
-      skillKey: memorySkill.SKILL_KEY,
-      resource: memorySkill.RESOURCE,
-      action: "MEMORY_WRITE",
-      category: "WRITE",
-      state: "ALLOWED",
-    });
+    // remember is an ActionDefinition checked for the jarvis-core agent.
+    await grant(principalId, JARVIS_AGENT_KEY, memorySkill.SKILL_KEY, memorySkill.RESOURCE, "MEMORY_WRITE", "WRITE");
 
-    const rememberResult2 = await memorySkill.remember({
-      principalId,
-      agentKey,
-      memory: { type: "FACT", content: "now allowed", source: "test" },
-    });
+    const rememberResult2 = await memorySkill.remember(identityFor(principalId), { type: "FACT", content: "now allowed", source: "test" });
     expect(rememberResult2.status).toBe("EXECUTED");
 
     const found = await memorySkill.search({ principalId, agentKey, query: { query: "now allowed" } });

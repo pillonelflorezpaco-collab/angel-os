@@ -18,7 +18,10 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "tsx db/seed/seed.ts"
+    "db:seed": "tsx db/seed/seed.ts",
+    "identity": "tsx scripts/identity.ts",
+    "telegram": "tsx scripts/telegram.ts",
+    "worker": "tsx scripts/worker.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

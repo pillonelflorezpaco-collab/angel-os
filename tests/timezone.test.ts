@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import {
@@ -125,7 +126,7 @@ describe("skills use the principal's timezone, not the server's", () => {
     vi.useFakeTimers({ toFake: ["Date"], now: SERVER_NOW });
     listEventsSpy.mockClear();
 
-    const result = await new JarvisCore().handle({ principalId, input: "What do I have today?" });
+    const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input: "What do I have today?" });
 
     expect(result.status).toBe("EXECUTED");
     const params = listEventsSpy.mock.calls[0][1];
@@ -137,7 +138,7 @@ describe("skills use the principal's timezone, not the server's", () => {
   it("'remind me tomorrow at 10' is 10:00 tomorrow in the user's timezone", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: SERVER_NOW });
 
-    const result = await new JarvisCore().handle({ principalId, input: "Remind me tomorrow at 10 to call John" });
+    const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input: "Remind me tomorrow at 10 to call John" });
 
     expect(result.status).toBe("EXECUTED");
     const reminder = result.data as { remindAt: Date; message: string };
@@ -146,7 +147,7 @@ describe("skills use the principal's timezone, not the server's", () => {
   });
 
   it("rejects an impossible reminder time instead of storing a wrong one", async () => {
-    const result = await new JarvisCore().handle({ principalId, input: "Remind me tomorrow at 25 to do something" });
+    const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input: "Remind me tomorrow at 25 to do something" });
     expect(result.status).toBe("FAILED");
   });
 });

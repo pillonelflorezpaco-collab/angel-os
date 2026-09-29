@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { setPermission } from "../gateway/permissions/index.js";
-import {
-  decideApproval,
-  createApprovalRequest,
-  ApprovalOwnershipError,
-} from "../gateway/index.js";
+import { decideApproval, proposeAction } from "../gateway/index.js";
+import { ACTIONS, FAKE_SKILL, ensureExecRegistry, goodParams, grantFake, identityFor, registerFakeActions } from "./helpers/fakeActions.js";
+import { grant } from "./helpers/fixtures.js";
+import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { LocalMemoryProvider } from "../memory/local/index.js";
 import { MemoryNotFoundError } from "../memory/types/index.js";
 import { createTask, listTasks } from "../skills/system/tasks.js";
@@ -171,55 +170,40 @@ describe("two-principal isolation", () => {
   });
 
   describe("approvals", () => {
+    async function propose(principalId: string) {
+      registerFakeActions();
+      await ensureExecRegistry();
+      await grantFake(principalId, ACTIONS.SEND);
+      const r = await proposeAction(identityFor(principalId), { skillKey: FAKE_SKILL, action: ACTIONS.SEND, parameters: { ...goodParams, body: `body-${Math.random()}` } });
+      return r.approvalId!;
+    }
+
     it("A can decide A's own approval", async () => {
-      const approval = await createApprovalRequest({
-        principalId: principalA,
-        agentKey,
-        skillKey: TASKS_SKILL,
-        resource: "test:approval-a",
-        action: "SOME_ACTION",
-        parameters: {},
-      });
-      const decided = await decideApproval(principalA, approval.id, "APPROVED", "test");
-      expect(decided.status).toBe("APPROVED");
+      const id = await propose(principalA);
+      const decided = await decideApproval(identityFor(principalA), id, "APPROVED");
+      expect(decided.ok).toBe(true);
+      expect(decided.approval?.status).toBe("CONSUMED"); // approved, then executed exactly once
     });
 
     it("B cannot decide A's approval", async () => {
-      const approval = await createApprovalRequest({
-        principalId: principalA,
-        agentKey,
-        skillKey: TASKS_SKILL,
-        resource: "test:approval-a-2",
-        action: "SOME_ACTION",
-        parameters: {},
-      });
-
-      await expect(decideApproval(principalB, approval.id, "APPROVED", "test")).rejects.toThrow(
-        ApprovalOwnershipError
-      );
+      const id = await propose(principalA);
+      const outcome = await decideApproval(identityFor(principalB), id, "APPROVED");
+      expect(outcome.ok).toBe(false);
+      expect(outcome.code).toBe("NOT_FOUND");
 
       // Prove it's still PENDING — B's attempt did not mutate it.
       const db = getDb();
-      const stillPending = await db.approvalRequest.findUniqueOrThrow({ where: { id: approval.id } });
+      const stillPending = await db.approvalRequest.findUniqueOrThrow({ where: { id } });
       expect(stillPending.status).toBe("PENDING");
     });
 
     it("A cannot decide B's approval", async () => {
-      const approval = await createApprovalRequest({
-        principalId: principalB,
-        agentKey,
-        skillKey: TASKS_SKILL,
-        resource: "test:approval-b",
-        action: "SOME_ACTION",
-        parameters: {},
-      });
-
-      await expect(decideApproval(principalA, approval.id, "REJECTED", "test")).rejects.toThrow(
-        ApprovalOwnershipError
-      );
+      const id = await propose(principalB);
+      const outcome = await decideApproval(identityFor(principalA), id, "DENIED");
+      expect(outcome.code).toBe("NOT_FOUND");
 
       const db = getDb();
-      const stillPending = await db.approvalRequest.findUniqueOrThrow({ where: { id: approval.id } });
+      const stillPending = await db.approvalRequest.findUniqueOrThrow({ where: { id } });
       expect(stillPending.status).toBe("PENDING");
     });
   });
@@ -262,12 +246,12 @@ describe("two-principal isolation", () => {
 
   describe("reminders", () => {
     it("A cannot see B's reminders through listReminders", async () => {
-      await createReminder({
-        principalId: principalB,
-        agentKey,
+      await grant(principalB, JARVIS_AGENT_KEY, TASKS_SKILL, TASKS_RESOURCE, "CREATE_REMINDER", "WRITE");
+      const created = await createReminder(identityFor(principalB), {
         message: "B's private reminder",
         remindAt: new Date(Date.now() + 60_000),
       });
+      expect(created.status).toBe("EXECUTED");
       const aResult = await listReminders({ principalId: principalA, agentKey });
       expect(aResult.status).toBe("EXECUTED");
       const aReminders = aResult.data as { message: string }[];

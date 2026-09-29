@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { setPermission } from "../gateway/permissions/index.js";
@@ -83,12 +84,12 @@ describe("Jarvis Core — deterministic request flow", () => {
 
   it("creates a task from natural language and it is retrievable", async () => {
     const createResult = await jarvis.handle({
-      principalId,
+      principalId, identity: identityFor(principalId),
       input: "create task: call the accountant",
     });
     expect(createResult.status).toBe("EXECUTED");
 
-    const listResult = await jarvis.handle({ principalId, input: "what are my tasks" });
+    const listResult = await jarvis.handle({ principalId, identity: identityFor(principalId), input: "what are my tasks" });
     expect(listResult.status).toBe("EXECUTED");
     const tasks = listResult.data as { title: string }[];
     expect(tasks.some((t) => t.title === "call the accountant")).toBe(true);
@@ -96,7 +97,7 @@ describe("Jarvis Core — deterministic request flow", () => {
 
   it("creates a reminder from 'remind me tomorrow at 10 to call John'", async () => {
     const result = await jarvis.handle({
-      principalId,
+      principalId, identity: identityFor(principalId),
       input: "Remind me tomorrow at 10 to call John.",
     });
     expect(result.status).toBe("EXECUTED");
@@ -106,13 +107,13 @@ describe("Jarvis Core — deterministic request flow", () => {
 
   it("stores and retrieves a memory via 'remember that ...'", async () => {
     const remembered = await jarvis.handle({
-      principalId,
+      principalId, identity: identityFor(principalId),
       input: "remember that I prefer async standups",
     });
     expect(remembered.status).toBe("EXECUTED");
 
     const searched = await jarvis.handle({
-      principalId,
+      principalId, identity: identityFor(principalId),
       input: "what do i know about async standups",
     });
     expect(searched.status).toBe("EXECUTED");
@@ -121,7 +122,7 @@ describe("Jarvis Core — deterministic request flow", () => {
   });
 
   it("returns FAILED with guidance for unrecognized input", async () => {
-    const result = await jarvis.handle({ principalId, input: "asdkjhaskjdh nonsense input" });
+    const result = await jarvis.handle({ principalId, identity: identityFor(principalId), input: "asdkjhaskjdh nonsense input" });
     expect(result.status).toBe("FAILED");
   });
 });

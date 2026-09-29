@@ -1,5 +1,6 @@
 import type { AuditEventType, AuditResult } from "@prisma/client";
 import { getDb } from "../../db/client/index.js";
+import { currentIdentity } from "../../identity/context.js";
 
 export interface AuditEventInput {
   principalId: string;
@@ -20,6 +21,7 @@ export interface AuditEventInput {
  */
 export async function recordAuditEvent(input: AuditEventInput) {
   const db = getDb();
+  const identity = currentIdentity();
 
   let agentId: string | undefined;
   if (input.agentKey) {
@@ -36,6 +38,11 @@ export async function recordAuditEvent(input: AuditEventInput) {
       action: input.action,
       result: input.result,
       source: input.source,
+      // Where the request came from, taken from the authenticated identity
+      // of the current request (never from a caller-supplied value). Null
+      // when there is no interface request (seed scripts, system work).
+      interfaceSource: identity?.interfaceSource,
+      requestId: identity?.requestId,
       metadata: (input.metadata ?? {}) as object,
     },
   });

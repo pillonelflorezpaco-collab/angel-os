@@ -71,7 +71,7 @@ describe("permission model", () => {
     expect(result.state).toBe("DENIED");
   });
 
-  it("routes APPROVAL_REQUIRED actions to a pending approval instead of executing", async () => {
+  it("refuses to run an APPROVAL_REQUIRED closure (approval-gated actions must be ActionDefinitions) and never executes it", async () => {
     await setPermission({
       principalId,
       agentKey,
@@ -98,8 +98,10 @@ describe("permission model", () => {
       }
     );
 
-    expect(result.status).toBe("PENDING_APPROVAL");
-    expect(result.approvalId).toBeDefined();
+    // A closure can never be "the approved action", so the closure path fails
+    // closed; the real approval path is proposeAction (tests/approval-engine.test.ts).
+    expect(result.status).toBe("DENIED");
+    expect(result.approvalId).toBeUndefined();
     expect(executed).toBe(false); // the gateway must never execute before approval
   });
 

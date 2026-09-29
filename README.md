@@ -55,6 +55,37 @@ npm run db:seed         # creates the Principal, jarvis-core agent, skills, perm
 # and set ANGEL_OS_CREDENTIAL_ENCRYPTION_KEY in .env to the result.
 ```
 
+### Access: tokens and interfaces
+
+Every `/api/*` request needs a bearer token; there is no unauthenticated
+mode. Issue one for the seeded principal (printed once, never stored in
+plaintext):
+
+```bash
+npm run identity -- create-token 00000000-0000-0000-0000-000000000001 GUIDEHUB "my laptop"
+curl -H "Authorization: Bearer aos_..." http://localhost:3000/api/me
+```
+
+Telegram (long polling, private chats from linked accounts only):
+
+```bash
+npm run identity -- link 00000000-0000-0000-0000-000000000001 TELEGRAM <your-telegram-user-id>
+TELEGRAM_BOT_TOKEN=... npm run telegram
+```
+
+API contract for clients: `docs/api/README.md`. Design:
+`docs/architecture/interfaces-and-identity.md`.
+
+### Reminder worker
+
+Reminders are delivered by a separate process (never inside the API):
+
+```bash
+ANGEL_OS_SYSTEM_PRINCIPAL_ID=<your principal id> TELEGRAM_BOT_TOKEN=... npm run worker
+```
+It acts as a SYSTEM identity for that one principal and delivers to that principal's linked
+Telegram account only. See `docs/architecture/reminders-and-delivery.md`.
+
 ### Connecting Google Calendar (optional)
 
 1. Create OAuth credentials at
@@ -63,11 +94,11 @@ npm run db:seed         # creates the Principal, jarvis-core agent, skills, perm
    authorized redirect URI.
 2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
    `GOOGLE_OAUTH_REDIRECT_URI` in `.env`.
-3. `GET /api/integrations/google/calendar/connect` returns
+3. `GET /api/integrations/google/calendar/connect` (with your bearer token) returns
    `{ "authorizeUrl": "..." }` — open it in a browser, approve, and
    Google redirects to the callback route, which confirms
    `{ "status": "connected", ... }`.
-4. Ask Jarvis: `POST /api/jarvis {"input": "What do I have today?"}`.
+4. Ask Jarvis: `POST /api/jarvis {"input": "What do I have today?"}` (bearer token required).
 
 Without step 1–2 configured, `/connect` fails with a clear config error
 rather than a crash — this is expected in an environment with no Google
@@ -84,13 +115,7 @@ npm run build && npm start
 Try it:
 
 ```bash
-curl http://localhost:3000/health
-
-curl -X POST http://localhost:3000/api/jarvis \
-  -H "Content-Type: application/json" \
-  -d '{"input":"remind me tomorrow at 10 to call John"}'
-
-curl http://localhost:3000/api/tasks
+curl http://localhost:3000/health   # public; everything under /api needs a token (see below)
 ```
 
 ## Test
@@ -127,6 +152,11 @@ knowledge/  Markdown knowledge layer (list/read/search)
 context/    Context Engine: assembles a small relevant package, never "everything"
 skills/     Skills, each executing only through the gateway (system/ built-ins, integrations/ external providers)
 gateway/    Permission checks, approvals, audit log, and the BlackOS bridge placeholder
+identity/   Authentication: IdentityContext, API tokens, linked external accounts, interface registry
+interfaces/ Thin adapters (Telegram, voice)
+application/ The one dispatcher + approval facade every interface uses; gateway/execution + approvals run sensitive actions
+activity/   User-facing life-history stream (separate from the audit log)
+reminders/  Reminder engine: atomic claim/lease, delivery via the application DeliveryPort (run by scripts/worker.ts)
 connectors/ Integration/Connector Layer — provider registry, credential abstraction (encrypted store), connection records, OAuth state, and the Google Calendar connector
 db/         Prisma schema, migrations, seed script, shared client
 api/        Express HTTP API

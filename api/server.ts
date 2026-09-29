@@ -1,333 +1,309 @@
 import express from "express";
 import { z } from "zod";
-import { getDb } from "../db/client/index.js";
-import { JarvisCore, JARVIS_AGENT_KEY } from "../core/index.js";
+import { JARVIS_AGENT_KEY } from "../core/index.js";
+import { handleInterfaceMessage, MAX_INPUT_CHARS } from "../application/dispatcher.js";
 import { createTask, listTasks, createReminder, listReminders } from "../skills/system/tasks.js";
 import { search as searchMemory } from "../skills/system/memory.js";
+import { listActivity, summarizeActivity } from "../skills/system/activity.js";
 import {
   listAuditLog,
   decideApproval,
   listPendingApprovals,
-  ApprovalOwnershipError,
-  ApprovalNotPendingError,
+  getApproval,
+  type ApprovalCode,
 } from "../gateway/index.js";
-import { getConnectionService, getConnectorRegistry, ConnectionNotFoundError, getOAuthStateService, OAuthStateInvalidError, OAuthStateExpiredError } from "../connectors/index.js";
-import { getCredentialStore } from "../connectors/credentials/select.js";
-import { GoogleOAuthClient, GoogleOAuthConfigError, GoogleOAuthApiError, loadGoogleOAuthConfig } from "../connectors/google/oauthClient.js";
+import { getConnectionService, getConnectorRegistry, ConnectionNotFoundError, OAuthStateInvalidError, OAuthStateExpiredError } from "../connectors/index.js";
+import { GoogleOAuthConfigError, GoogleOAuthApiError } from "../connectors/google/oauthClient.js";
+import { registerSkillActions } from "../skills/manifest.js";
 import { registerGoogleConnector } from "../connectors/google/index.js";
-import { recordAuditEvent } from "../gateway/audit/index.js";
+import { startGoogleAuthorization, completeGoogleAuthorization } from "../connectors/google/authorization.js";
+import { BearerTokenAuthenticator, getPrincipalProfile, type Authenticator } from "../identity/index.js";
+import { asyncRoute, authenticate, cors, errorHandler, identityOf, parseCorsOrigins, rejectPrincipalOverride } from "./middleware.js";
+
+// The HTTP interface. It is an ADAPTER: it authenticates the caller into an
+// IdentityContext, then hands the request to Jarvis or to a skill. It never
+// reads a principal from the request, and it has no database access — every
+// personal operation goes Skill → Gateway. See docs/api/README.md for the
+// contract clients (GuideHub, mobile, scripts) can rely on.
 
 registerGoogleConnector();
+registerSkillActions(); // production ActionDefinitions (approvals decided over HTTP must find them)
 
-const app = express();
-app.use(express.json());
+export const API_VERSION = "2";
 
-const jarvis = new JarvisCore();
+const APPROVAL_HTTP_STATUS: Record<Exclude<ApprovalCode, "OK">, number> = {
+  NOT_FOUND: 404,
+  EXPIRED: 410,
+  CONSUMED: 409,
+  ALREADY_DECIDED: 409,
+  FORBIDDEN: 403,
+  UNAVAILABLE: 409,
+};
 
-/** Resolves the (currently singleton) Principal, creating it if this is a fresh database. */
-async function getOrCreatePrincipal(): Promise<string> {
-  const db = getDb();
-  const existing = await db.principal.findFirst();
-  if (existing) return existing.id;
-  const created = await db.principal.create({ data: { name: "Angel" } });
-  return created.id;
+export interface AppOptions {
+  authenticator?: Authenticator;
+  corsOrigins?: string[];
 }
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "angel-os", version: "0.1.0" });
-});
+export function createApp(options: AppOptions = {}) {
+  const authenticator = options.authenticator ?? new BearerTokenAuthenticator();
+  const app = express();
 
-const jarvisRequestSchema = z.object({ input: z.string().min(1) });
-
-app.post("/api/jarvis", async (req, res) => {
-  const parsed = jarvisRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const principalId = await getOrCreatePrincipal();
-  const result = await jarvis.handle({ principalId, input: parsed.data.input });
-  res.json(result);
-});
-
-app.get("/api/tasks", async (_req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  const result = await listTasks({ principalId, agentKey: JARVIS_AGENT_KEY });
-  res.json(result);
-});
-
-const createTaskSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  dueAt: z.string().datetime().optional(),
-});
-
-app.post("/api/tasks", async (req, res) => {
-  const parsed = createTaskSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const principalId = await getOrCreatePrincipal();
-  const result = await createTask({
-    principalId,
-    agentKey: JARVIS_AGENT_KEY,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : undefined,
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Angel-API-Version", API_VERSION);
+    next();
   });
-  res.json(result);
-});
+  app.use(cors(options.corsOrigins ?? parseCorsOrigins(process.env.ANGEL_OS_CORS_ORIGINS)));
+  app.use(express.json({ limit: "100kb" }));
 
-app.get("/api/reminders", async (_req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  const result = await listReminders({ principalId, agentKey: JARVIS_AGENT_KEY });
-  res.json(result);
-});
-
-const createReminderSchema = z.object({
-  message: z.string().min(1),
-  remindAt: z.string().datetime(),
-  taskId: z.string().uuid().optional(),
-});
-
-app.post("/api/reminders", async (req, res) => {
-  const parsed = createReminderSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const principalId = await getOrCreatePrincipal();
-  const result = await createReminder({
-    principalId,
-    agentKey: JARVIS_AGENT_KEY,
-    message: parsed.data.message,
-    remindAt: new Date(parsed.data.remindAt),
-    taskId: parsed.data.taskId,
+  // ── Public ──────────────────────────────────────────────────────────────
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", service: "angel-os", version: "0.1.0" });
   });
-  res.json(result);
-});
 
-app.get("/api/memory/search", async (req, res) => {
-  const query = typeof req.query.q === "string" ? req.query.q : "";
-  const principalId = await getOrCreatePrincipal();
-  // Fixes the audit finding that this route called MemoryProvider directly,
-  // bypassing the permission gateway. Now: API -> Skill -> Gateway ->
-  // Permission -> MemoryProvider, same as every other route.
-  const result = await searchMemory({
-    principalId,
-    agentKey: JARVIS_AGENT_KEY,
-    query: { query },
+  // Google's redirect arrives through the user's browser and cannot carry a
+  // bearer token. Its authentication is the principal-bound, single-use
+  // `state` (see connectors/oauth/state.ts) — not a caller-supplied identity.
+  const callbackQuerySchema = z.object({ code: z.string().optional(), state: z.string().optional(), error: z.string().optional() });
+  app.get(
+    "/api/integrations/google/calendar/callback",
+    asyncRoute(async (req, res) => {
+      const parsed = callbackQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: "Malformed callback request." });
+      if (parsed.data.error) return res.status(400).json({ error: "Google authorization was denied or failed." });
+      if (!parsed.data.code || !parsed.data.state) return res.status(400).json({ error: "Missing code or state." });
+      try {
+        const { externalAccountId } = await completeGoogleAuthorization(parsed.data.code, parsed.data.state);
+        // Never return tokens — only a safe confirmation.
+        return res.json({ status: "connected", provider: "google", externalAccountId });
+      } catch (err) {
+        if (err instanceof OAuthStateInvalidError || err instanceof OAuthStateExpiredError) return res.status(400).json({ error: err.message });
+        if (err instanceof GoogleOAuthConfigError) return res.status(500).json({ error: err.message });
+        if (err instanceof GoogleOAuthApiError) return res.status(502).json({ error: "Google rejected the authorization request." });
+        throw err;
+      }
+    })
+  );
+
+  // ── Everything below requires an authenticated identity ─────────────────
+  const api = express.Router();
+  api.use(authenticate(authenticator));
+  api.use(rejectPrincipalOverride);
+
+  // Who am I, and through what? The first call a client makes.
+  api.get(
+    "/me",
+    asyncRoute(async (req, res) => {
+      const identity = identityOf(req);
+      const profile = await getPrincipalProfile(identity.principalId);
+      res.json({
+        principal: profile,
+        interface: identity.interfaceSource,
+        authMethod: identity.authMethod,
+        requestId: identity.requestId,
+      });
+    })
+  );
+
+  const jarvisRequestSchema = z.object({ input: z.string().min(1).max(MAX_INPUT_CHARS) });
+  api.post(
+    "/jarvis",
+    asyncRoute(async (req, res) => {
+      const parsed = jarvisRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await handleInterfaceMessage(identityOf(req), parsed.data.input));
+    })
+  );
+
+  api.get(
+    "/tasks",
+    asyncRoute(async (req, res) => {
+      res.json(await listTasks({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY }));
+    })
+  );
+
+  const createTaskSchema = z.object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    dueAt: z.string().datetime().optional(),
   });
-  res.json(result);
-});
+  api.post(
+    "/tasks",
+    asyncRoute(async (req, res) => {
+      const parsed = createTaskSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(
+        await createTask({
+          principalId: identityOf(req).principalId,
+          agentKey: JARVIS_AGENT_KEY,
+          title: parsed.data.title,
+          description: parsed.data.description,
+          dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : undefined,
+        })
+      );
+    })
+  );
 
-app.get("/api/audit", async (_req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  const results = await listAuditLog(principalId);
-  res.json(results);
-});
+  api.get(
+    "/reminders",
+    asyncRoute(async (req, res) => {
+      res.json(await listReminders({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY }));
+    })
+  );
 
-app.get("/api/approvals", async (_req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  const results = await listPendingApprovals(principalId);
-  res.json(results);
-});
+  const createReminderSchema = z.object({
+    message: z.string().min(1),
+    remindAt: z.string().datetime(),
+    taskId: z.string().uuid().optional(),
+  });
+  api.post(
+    "/reminders",
+    asyncRoute(async (req, res) => {
+      const parsed = createReminderSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(
+        await createReminder(identityOf(req), {
+          message: parsed.data.message,
+          remindAt: new Date(parsed.data.remindAt),
+          taskId: parsed.data.taskId,
+        })
+      );
+    })
+  );
 
-const decideApprovalSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]) });
+  api.get(
+    "/memory/search",
+    asyncRoute(async (req, res) => {
+      const query = typeof req.query.q === "string" ? req.query.q : "";
+      res.json(await searchMemory({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, query: { query } }));
+    })
+  );
 
-app.post("/api/approvals/:id/decide", async (req, res) => {
-  const parsed = decideApprovalSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const principalId = await getOrCreatePrincipal();
-  try {
-    const result = await decideApproval(principalId, req.params.id, parsed.data.decision, "api");
-    res.json(result);
-  } catch (err) {
-    if (err instanceof ApprovalOwnershipError) {
-      // Same response for "not found" and "belongs to someone else" — no
-      // signal to an attacker about which approval ids exist.
-      return res.status(404).json({ error: "Approval not found." });
-    }
-    if (err instanceof ApprovalNotPendingError) {
-      return res.status(409).json({ error: err.message });
-    }
-    res.status(500).json({ error: "Unexpected error." });
-  }
-});
+  // Activity: the user-facing life history. Deliberately separate from /audit.
+  const activityQuerySchema = z.object({
+    range: z.enum(["today", "yesterday", "week"]).default("today"),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  });
+  api.get(
+    "/activity",
+    asyncRoute(async (req, res) => {
+      const parsed = activityQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await listActivity({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, ...parsed.data }));
+    })
+  );
+  api.get(
+    "/activity/summary",
+    asyncRoute(async (req, res) => {
+      const parsed = activityQuerySchema.pick({ range: true }).safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+      res.json(await summarizeActivity({ principalId: identityOf(req).principalId, agentKey: JARVIS_AGENT_KEY, range: parsed.data.range }));
+    })
+  );
 
-// Read-only, no-secret connection metadata — no OAuth routes, no
-// provider-specific routes, per Build #2's explicit scope. Every response
-// goes through ConnectionSummary (connectors/types/index.ts), which never
-// includes credentialRef or metadata.
-app.get("/api/connections", async (_req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  const results = await getConnectionService().list(principalId);
-  res.json(results);
-});
+  // Audit: the security/system trace.
+  api.get(
+    "/audit",
+    asyncRoute(async (req, res) => {
+      res.json(await listAuditLog(identityOf(req).principalId));
+    })
+  );
 
-app.get("/api/connections/:id", async (req, res) => {
-  const principalId = await getOrCreatePrincipal();
-  try {
-    const result = await getConnectionService().get(principalId, req.params.id);
-    res.json(result);
-  } catch (err) {
-    if (err instanceof ConnectionNotFoundError) {
-      return res.status(404).json({ error: "Connection not found." });
-    }
-    res.status(500).json({ error: "Unexpected error." });
-  }
-});
+  // Approvals. The caller is always the authenticated identity; an approval
+  // that does not exist and one that belongs to someone else are the same 404.
+  api.get(
+    "/approvals",
+    asyncRoute(async (req, res) => {
+      res.json(await listPendingApprovals(identityOf(req)));
+    })
+  );
 
-app.get("/api/connectors", (_req, res) => {
-  const providers = getConnectorRegistry()
-    .list()
-    .map((p) => ({
-      providerKey: p.providerKey,
-      displayName: p.displayName,
-      requiresAuthorization: p.requiresAuthorization(),
-      capabilities: p.listCapabilities(),
-    }));
-  res.json(providers);
-});
+  api.get(
+    "/approvals/:id",
+    asyncRoute(async (req, res) => {
+      const outcome = await getApproval(identityOf(req), req.params.id);
+      if (!outcome.ok) return res.status(APPROVAL_HTTP_STATUS[outcome.code as Exclude<ApprovalCode, "OK">]).json({ error: outcome.message });
+      res.json(outcome.approval);
+    })
+  );
 
-// ── Google OAuth (Calendar, read-only) ──────────────────────────────────────
-//
-// Minimal routes per Build #3's explicit scope: initiate + callback only.
-// No token is ever returned in a response body or query string here — see
-// docs/SECURITY.md "OAuth state security" and "Credential handling
-// (Connector Layer)".
-
-function googleRedirectUri(): string {
-  const uri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
-  if (!uri) {
-    throw new GoogleOAuthConfigError("GOOGLE_OAUTH_REDIRECT_URI must be set to use the Google connector.");
-  }
-  return uri;
-}
-
-app.get("/api/integrations/google/calendar/connect", async (_req, res) => {
-  try {
-    const config = loadGoogleOAuthConfig();
-    const redirectUri = googleRedirectUri();
-    const principalId = await getOrCreatePrincipal();
-
-    const state = await getOAuthStateService().create({ principalId, provider: "google", redirectUri });
-    const oauthClient = new GoogleOAuthClient(config);
-    const authorizeUrl = oauthClient.buildAuthUrl({ state, redirectUri });
-
-    // JSON rather than a blind redirect: this API has no browser session
-    // concept yet (see docs/SECURITY.md), so returning the URL for the
-    // caller to navigate to is more honest than pretending a redirect
-    // here means something it doesn't.
-    res.json({ authorizeUrl });
-  } catch (err) {
-    if (err instanceof GoogleOAuthConfigError) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.status(500).json({ error: "Unexpected error." });
-  }
-});
-
-const callbackQuerySchema = z.object({
-  code: z.string().optional(),
-  state: z.string().optional(),
-  error: z.string().optional(),
-});
-
-app.get("/api/integrations/google/calendar/callback", async (req, res) => {
-  const parsed = callbackQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Malformed callback request." });
-  }
-
-  if (parsed.data.error) {
-    // User denied consent, or Google reported an error — never treat this
-    // as success, and there is no principal to attribute this to yet
-    // (state hasn't been consumed), so nothing is audited here beyond the
-    // response itself.
-    return res.status(400).json({ error: "Google authorization was denied or failed." });
-  }
-
-  if (!parsed.data.code || !parsed.data.state) {
-    return res.status(400).json({ error: "Missing code or state." });
-  }
-
-  let consumed;
-  try {
-    consumed = await getOAuthStateService().consume(parsed.data.state, "google");
-  } catch (err) {
-    if (err instanceof OAuthStateInvalidError) return res.status(400).json({ error: err.message });
-    if (err instanceof OAuthStateExpiredError) return res.status(400).json({ error: err.message });
-    return res.status(500).json({ error: "Unexpected error." });
-  }
-
-  try {
-    const config = loadGoogleOAuthConfig();
-    const oauthClient = new GoogleOAuthClient(config);
-    const tokens = await oauthClient.exchangeCode(parsed.data.code, consumed.redirectUri);
-    const userInfo = await oauthClient.fetchUserInfo(tokens.accessToken);
-
-    const db = getDb();
-    const connection = await db.connection.upsert({
-      where: {
-        principalId_provider_externalAccountId: {
-          principalId: consumed.principalId,
-          provider: "google",
-          externalAccountId: userInfo.email,
-        },
-      },
-      create: {
-        principalId: consumed.principalId,
-        provider: "google",
-        externalAccountId: userInfo.email,
-        displayName: userInfo.email,
-        status: "ACTIVE",
-      },
-      update: { status: "ACTIVE" },
-    });
-
-    const ref = `google:connection:${connection.id}`;
-    await getCredentialStore().setSecret(
-      ref,
-      JSON.stringify({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt.toISOString(),
+  // Decisions take NO parameters: what runs is exactly what was stored when
+  // the action was proposed. A body carrying anything is refused, so a
+  // client cannot even try to change what it is approving.
+  const noBody = z.object({}).strict();
+  for (const [route, decision] of [["approve", "APPROVED"], ["deny", "DENIED"]] as const) {
+    api.post(
+      `/approvals/:id/${route}`,
+      asyncRoute(async (req, res) => {
+        if (!noBody.safeParse(req.body ?? {}).success) {
+          return res.status(400).json({ error: "Approval decisions take no parameters." });
+        }
+        const outcome = await decideApproval(identityOf(req), req.params.id, decision);
+        if (!outcome.ok) return res.status(APPROVAL_HTTP_STATUS[outcome.code as Exclude<ApprovalCode, "OK">]).json({ error: outcome.message, code: outcome.code });
+        res.json({
+          message: outcome.message,
+          executed: outcome.executed ?? false,
+          execution: outcome.execution ? { status: outcome.execution.status, message: outcome.execution.message } : undefined,
+          approval: outcome.approval,
+        });
       })
     );
-    await db.connection.update({ where: { id: connection.id }, data: { credentialRef: ref } });
-
-    await recordAuditEvent({
-      principalId: consumed.principalId,
-      eventType: "CONNECTION_AUTHORIZED",
-      resource: `connector:google`,
-      action: "OAUTH_CALLBACK",
-      result: "SUCCESS",
-      source: "api",
-      metadata: { connectionId: connection.id, provider: "google", externalAccountId: userInfo.email },
-    });
-
-    // Never return tokens — only safe, non-secret confirmation.
-    res.json({ status: "connected", provider: "google", externalAccountId: userInfo.email });
-  } catch (err) {
-    await recordAuditEvent({
-      principalId: consumed.principalId,
-      eventType: "CONNECTION_FAILED",
-      resource: "connector:google",
-      action: "OAUTH_CALLBACK",
-      result: "FAILURE",
-      source: "api",
-      metadata: { reason: err instanceof Error ? err.name : "unknown" },
-    });
-    if (err instanceof GoogleOAuthConfigError) {
-      return res.status(500).json({ error: err.message });
-    }
-    if (err instanceof GoogleOAuthApiError) {
-      return res.status(502).json({ error: "Google rejected the authorization request." });
-    }
-    res.status(500).json({ error: "Unexpected error completing Google authorization." });
   }
-});
+
+  // Connections: metadata only (ConnectionSummary never carries credentials).
+  api.get(
+    "/connections",
+    asyncRoute(async (req, res) => {
+      res.json(await getConnectionService().list(identityOf(req).principalId));
+    })
+  );
+  api.get(
+    "/connections/:id",
+    asyncRoute(async (req, res) => {
+      try {
+        res.json(await getConnectionService().get(identityOf(req).principalId, req.params.id));
+      } catch (err) {
+        if (err instanceof ConnectionNotFoundError) return res.status(404).json({ error: "Connection not found." });
+        throw err;
+      }
+    })
+  );
+  api.get("/connectors", (_req, res) => {
+    res.json(
+      getConnectorRegistry()
+        .list()
+        .map((p) => ({
+          providerKey: p.providerKey,
+          displayName: p.displayName,
+          requiresAuthorization: p.requiresAuthorization(),
+          capabilities: p.listCapabilities(),
+        }))
+    );
+  });
+
+  api.get(
+    "/integrations/google/calendar/connect",
+    asyncRoute(async (req, res) => {
+      try {
+        res.json(await startGoogleAuthorization(identityOf(req).principalId));
+      } catch (err) {
+        if (err instanceof GoogleOAuthConfigError) return res.status(500).json({ error: err.message });
+        throw err;
+      }
+    })
+  );
+
+  api.use((_req, res) => {
+    res.status(404).json({ error: "Not found." });
+  });
+
+  app.use("/api", api);
+  app.use(errorHandler);
+  return app;
+}
+
+export const app = createApp();
 
 const port = Number(process.env.PORT ?? 3000);
 
@@ -337,5 +313,3 @@ if (process.env.NODE_ENV !== "test") {
     console.log(`Angel OS API listening on http://localhost:${port}`);
   });
 }
-
-export { app };

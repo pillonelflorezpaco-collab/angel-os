@@ -1,3 +1,4 @@
+import { identityFor } from "./helpers/fakeActions.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { parseIntent } from "../core/router/index.js";
@@ -36,7 +37,7 @@ describe("reminder query routing", () => {
     });
 
     it.each(reminderPhrasings)("%j returns reminders, never tasks", async (input) => {
-      const result = await new JarvisCore().handle({ principalId, input });
+      const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input });
       expect(result.status).toBe("EXECUTED");
       const items = result.data as Record<string, unknown>[];
       expect(items.map((i) => i.message)).toContain("routing-only-reminder");
@@ -45,7 +46,7 @@ describe("reminder query routing", () => {
     });
 
     it("the task query still returns tasks", async () => {
-      const result = await new JarvisCore().handle({ principalId, input: "What are my tasks?" });
+      const result = await new JarvisCore().handle({ principalId, identity: identityFor(principalId), input: "What are my tasks?" });
       const items = result.data as Record<string, unknown>[];
       expect(items.map((i) => i.title)).toContain("routing-only-task");
     });
