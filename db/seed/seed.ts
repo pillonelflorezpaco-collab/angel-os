@@ -71,6 +71,12 @@ async function main() {
     create: { key: "system.learning", name: "System Learning Lab", description: "Learning topics, study sessions and recall cards." },
   });
 
+  const captureSkill = await db.skill.upsert({
+    where: { key: "system.capture" },
+    update: {},
+    create: { key: "system.capture", name: "System Capture", description: "Draft proposals from a sentence; nothing is saved until the owner confirms." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -179,6 +185,10 @@ async function main() {
     { resource: "angel:learning", action: "EXPERIMENT_OBSERVE", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "EXPERIMENT_TRANSITION", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
     { resource: "angel:learning", action: "LESSON_RECORD", category: "WRITE", state: "ALLOWED", skillId: learningSkill.id },
+    // system.capture — holding a DRAFT (interpret / confirm / cancel). Draft bookkeeping only; every domain write inside a confirmed
+    // draft is its own ActionDefinition with its own permission row above.
+    { resource: "angel:capture", action: "CAPTURE_INTERPRET", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
+    { resource: "angel:capture", action: "CAPTURE_DECIDE", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",
@@ -240,7 +250,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, captureSkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
   );
 }
 

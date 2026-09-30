@@ -50,6 +50,7 @@ model Principal {
   learningObjectives  LearningObjective[]
   learningExperiments LearningExperiment[]
   reviews             Review[]
+  CaptureProposal     CaptureProposal[]
 
   @@map("principals")
 }
@@ -1325,4 +1326,32 @@ model ExperimentStatusChange {
   @@index([experimentId, createdAt])
   @@index([principalId])
   @@map("experiment_status_changes")
+}
+
+// ── Jarvis capture drafts (Step: capture foundation) ──────────────────────
+// A DRAFT only: what Jarvis understood from a sentence and the exact actions it would propose. Nothing here is domain state — a
+// draft becomes real only when its owner confirms it and each mapped ActionDefinition then runs through the gateway. The proposal
+// and its hash are immutable; the status moves once (PENDING → CONFIRMED | CANCELLED | EXPIRED) and the outcome is written once.
+enum CaptureStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+model CaptureProposal {
+  id              String        @id @default(uuid())
+  principalId     String
+  principal       Principal     @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  interfaceSource String // where it was proposed (recorded, never chosen by the model)
+  proposal        Json // validated items, exact parameters, clarifications, rejections
+  proposalHash    String
+  status          CaptureStatus @default(PENDING)
+  outcome         Json?
+  expiresAt       DateTime
+  decidedAt       DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([principalId, status])
+  @@map("capture_proposals")
 }
