@@ -16,6 +16,8 @@ import { registerGoogleConnector } from "../connectors/google/index.js";
 import { startGoogleAuthorization, completeGoogleAuthorization } from "../connectors/google/authorization.js";
 import { BearerTokenAuthenticator, getPrincipalProfile, type Authenticator } from "../identity/index.js";
 import { lifeRouter } from "./lifeRoutes.js";
+import { captureRouter } from "./captureRoutes.js";
+import type { CaptureModelProvider } from "../capture/provider.js";
 import { asyncRoute, authenticate, cors, errorHandler, identityOf, parseCorsOrigins, rejectPrincipalOverride } from "./middleware.js";
 
 // The HTTP interface. It is an ADAPTER: it authenticates the caller into an
@@ -41,6 +43,8 @@ const APPROVAL_HTTP_STATUS: Record<Exclude<ApprovalCode, "OK">, number> = {
 export interface AppOptions {
   authenticator?: Authenticator;
   corsOrigins?: string[];
+  /** The model that interprets sentences into capture proposals. None by default: POST /api/capture then answers 503. */
+  captureProvider?: CaptureModelProvider;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -352,6 +356,7 @@ export function createApp(options: AppOptions = {}) {
   );
 
   api.use(lifeRouter());
+  api.use(captureRouter(options.captureProvider));
 
   api.use((_req, res) => {
     res.status(404).json({ error: "Not found." });

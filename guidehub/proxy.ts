@@ -46,6 +46,10 @@ export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/learning\/(topics|sessions|objectives|experiments)$/ },
   { method: "GET", path: new RegExp(`^/api/learning/experiments/${UUID}$`) },
   actions("system.future", ["ASPIRATION_CREATE", "ASPIRATION_STATE_RECORD", "EVIDENCE_ATTACH"]),
+  // ── Capture: a sentence becomes a DRAFT; nothing is saved until confirm, and each confirmed item is an ordinary action ──
+  { method: "POST", path: /^\/api\/capture$/ },
+  { method: "POST", path: new RegExp(`^/api/capture/${UUID}/confirm$`) },
+  { method: "POST", path: new RegExp(`^/api/capture/${UUID}/cancel$`), emptyBody: true },
   actions("system.learning", ["OBJECTIVE_CREATE", "OBJECTIVE_CLOSE", "EXPERIMENT_CREATE", "EXPERIMENT_OBSERVE", "EXPERIMENT_TRANSITION", "LESSON_RECORD"]),
 ];
 

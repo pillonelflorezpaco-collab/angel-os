@@ -135,3 +135,14 @@ database access: every endpoint is a skill behind the gateway. Pagination beyond
 permissions-inspection endpoint ("what may I do?" — `GET /api/actions` lists what exists, not what is allowed) and a machine-readable schema per action
 (only top-level field names are exposed) are not built. **Open decisions for GuideHub:** token storage in a browser (see CORS) and whether the
 cockpit should call the API from a server component.
+
+
+## Capture (draft → confirm)
+
+| Route | Body | Meaning |
+|---|---|---|
+| `POST /api/capture` | `{ "text": "…" }` | An interpreter proposes typed records from a sentence. Returns a **draft**; nothing is saved. `503` when no interpreter is connected. |
+| `POST /api/capture/:id/confirm` | `{ "accept": [0, 2] }` (optional) | Runs the ticked items, each as an ordinary action (permission, interface policy, approval, audit). Per-item outcome: EXECUTED · PENDING_APPROVAL · DENIED · FAILED · SKIPPED. Single use. |
+| `POST /api/capture/:id/cancel` | `{}` | Nothing is ever written. |
+
+See `docs/architecture/capture.md`.

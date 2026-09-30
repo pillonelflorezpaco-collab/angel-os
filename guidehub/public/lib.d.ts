@@ -47,3 +47,9 @@ export function evidenceGroups(links: any[]): { value: string; label: string; it
 export function stateHeading(state: any, index: number, total: number): string;
 export function metricReadingLine(m: any): string;
 export function buildStateBody(aspirationId: string, values: Record<string, string>, evidence: { sourceKind: string; sourceId: string; stance: string }[]): { body: any; errors: string[] };
+export const CAPTURE_TYPE_LABELS: Record<string, string>;
+export function captureTypeLabel(t: string): string;
+export function captureCanSave(item: any): boolean;
+export function captureStatusLabel(status: string): string;
+export function captureOutcomeLabel(status: string): string;
+export function buildCaptureConfirmBody(checkedIndexes: number[]): { accept: number[] };

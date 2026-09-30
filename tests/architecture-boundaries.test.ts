@@ -170,8 +170,12 @@ describe("execution-path architecture boundaries", () => {
     });
 
     it("the life/decisions/future/learning HTTP routes are an adapter: no gateway, database or connector imports; acting by name goes only through the apiActions skill", () => {
+      for (const f of ["api/lifeRoutes.ts", "api/captureRoutes.ts"]) {
+      const src = code.get(f)!;
+      expect(runtimeImports(src).filter((s) => /(^|\/)(gateway|db|connectors|identity|memory|knowledge|life|future|learning)(\/|$)/.test(s)), f).toEqual([]);
+      expect(/\bgetDb\b|@prisma\/client/.test(src), f).toBe(false);
+      }
       const src = code.get("api/lifeRoutes.ts")!;
-      expect(runtimeImports(src).filter((s) => /(^|\/)(gateway|db|connectors|identity|memory|knowledge|life|future|learning)(\/|$)/.test(s))).toEqual([]);
       expect(/\bgetDb\b|@prisma\/client/.test(src)).toBe(false);
       expect(importersOf(/^skills\/system\/apiActions(\.js)?$/)).toEqual(["api/lifeRoutes.ts"]);
     });

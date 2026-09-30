@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -266,7 +266,7 @@ describe("Decision rules (step 3)", () => {
 });
 
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -337,7 +337,7 @@ describe("frontend safety (static checks)", () => {
     expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
   });
 });
 
@@ -406,5 +406,40 @@ describe("Step 5: Future Self + Learning screens", () => {
   it("no rule is re-implemented in the browser: the screens never compare evidence counts or gate transitions themselves", () => {
     expect(growth).not.toMatch(/observations?\.length\s*[<>=]|supports\s*[<>=]|CONFIRM_MIN|transitionRefusal/);
     expect(growth).not.toMatch(/ASPIRATION_ACHIEVE|ASPIRATION_RELEASE|ASPIRATION_UPDATE|CARD_|SESSION_LOG/);
+  });
+});
+
+
+describe("Capture screen", () => {
+  const cap = read("capture.js");
+  const UUID = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+  it("route #/capture only", () => {
+    expect(parseRoute("#/capture")).toEqual({ view: "capture" });
+    for (const bad of ["#/capture/", `#/capture/${UUID}`, "#/Capture"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+  });
+  it("only what the proxy allows is called: interpret, confirm, cancel — and nothing else", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    expect(matchRule("POST", "/api/capture")).toBeDefined();
+    expect(matchRule("POST", `/api/capture/${UUID}/confirm`)).toBeDefined();
+    expect(matchRule("POST", `/api/capture/${UUID}/cancel`)).toBeDefined();
+    for (const [m, p] of [["GET", "/api/capture"], ["GET", `/api/capture/${UUID}`], ["POST", "/api/capture/x/confirm"], ["POST", `/api/capture/${UUID}/approve`], ["POST", `/api/capture/${UUID}/confirm/x`], ["DELETE", "/api/capture"]] as const) expect(matchRule(m, p), `${m} ${p}`).toBeUndefined();
+    expect(cap.match(/api\("POST", [`"]\/api\/capture[^`"]*[`"]/g)?.length).toBe(3);
+  });
+  it("confirming sends only the ticked item numbers — never words, ids or labels; only READY items can be ticked", () => {
+    expect(buildCaptureConfirmBody([2, 0, 2, 9, -1, 1.5])).toEqual({ accept: [0, 2] });
+    expect(captureCanSave({ status: "READY" })).toBe(true);
+    for (const s of ["UNSUPPORTED", "INVALID", "NEEDS_CLARIFICATION", undefined]) expect(captureCanSave({ status: s })).toBe(false);
+    expect(captureCanSave(null)).toBe(false);
+    expect(cap).not.toMatch(/proposalId:|principalId|sourceId|skillKey|parameters/);
+  });
+  it("wording keeps the semantics: an inference is labelled as not a fact; outcomes are honest; the screen says nothing is saved yet", () => {
+    expect(captureTypeLabel("INFERENCE")).toMatch(/not a fact/);
+    expect(captureTypeLabel("EXPERIENCE")).toBe("Experience");
+    expect(captureOutcomeLabel("PENDING_APPROVAL")).toMatch(/Waiting for your approval/);
+    expect(captureOutcomeLabel("SKIPPED")).toBe("Not saved");
+    expect(captureOutcomeLabel("FAILED")).toMatch(/nothing saved/);
+    expect(captureStatusLabel("UNSUPPORTED")).toMatch(/Can't be saved/);
+    expect(cap).toContain("Nothing has been saved yet.");
+    expect(cap).toMatch(/not evidence, and not saved/);
   });
 });

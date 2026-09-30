@@ -190,6 +190,7 @@ export function parseRoute(hash) {
   if (h === "life") return { view: "life" };
   const m = /^life\/projects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
   if (m) return { view: "project", id: m[1] };
+  if (h === "capture") return { view: "capture" };
   if (h === "future-self") return { view: "future" };
   if (h === "learning") return { view: "learning" };
   if (h === "decisions") return { view: "decisions" };
@@ -357,4 +358,23 @@ export function buildStateBody(aspirationId, values, evidence) {
   if (!body.desired) errors.push("Describe the desired state.");
   if (!evidence.length) errors.push("Add at least one piece of evidence.");
   return { body: { aspirationId, ...body, evidence: evidence.map(({ sourceKind, sourceId, stance }) => ({ sourceKind, sourceId, stance })) }, errors };
+}
+
+// ── Capture: a draft proposal the owner confirms ───────────────────────────
+export const CAPTURE_TYPE_LABELS = {
+  EXPERIENCE: "Experience", INFERENCE: "Interpretation (not a fact)", DECISION: "Decision", RESULT: "Result", LESSON: "Lesson",
+  EXPERIMENT_OBSERVATION: "Experiment observation", FUTURE_SELF_STATE: "Future Self state", NEXT_ACTION: "Next action",
+};
+export const captureTypeLabel = (t) => CAPTURE_TYPE_LABELS[t] ?? String(t).toLowerCase();
+/** Only READY items can be saved; the others say why not, in the server's words. */
+export const captureCanSave = (item) => item?.status === "READY";
+export function captureStatusLabel(status) {
+  return { READY: "Ready to save", NEEDS_CLARIFICATION: "Needs a clarification", UNSUPPORTED: "Can't be saved from a sentence", INVALID: "Can't be saved" }[status] ?? String(status).toLowerCase();
+}
+export function captureOutcomeLabel(status) {
+  return { EXECUTED: "Saved", PENDING_APPROVAL: "Waiting for your approval", DENIED: "Not allowed", FAILED: "Failed — nothing saved", SKIPPED: "Not saved" }[status] ?? String(status).toLowerCase();
+}
+/** Body for confirm: the item numbers the owner ticked. No text, ids or labels ever travel back — the server holds the exact draft. */
+export function buildCaptureConfirmBody(checkedIndexes) {
+  return { accept: [...new Set(checkedIndexes)].filter((n) => Number.isInteger(n) && n >= 0 && n < 8).sort((a, b) => a - b) };
 }

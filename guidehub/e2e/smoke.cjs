@@ -56,6 +56,7 @@ async function seedGrowth(stamp) {
   await act("system.future/ASPIRATION_STATE_RECORD", { aspirationId: asp.id, current: "I walk five days a week", gap: "weekends", desired: "walk daily", note: "after a good week",
     evidence: [{ sourceKind: "RESULT", sourceId: result.id, stance: "SUPPORTS" }, { sourceKind: "MEMORY", sourceId: lived.id, stance: "SUPPORTS" }] });
   growth.aspiration = asp;
+  await act("system.future/ASPIRATION_CREATE", { title: "Angel OS as a daily system", current: "built, unused", desired: "used daily" }); // the Capture screen resolves this title
   await act("system.learning/OBJECTIVE_CREATE", { title: `Hold a conversation ${stamp}`, evidenceStandard: "Ten minutes without switching language" });
   const e1 = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Morning study sticks better ${stamp}`, method: "30 minutes at 7am for a week" });
   const obs = await act("system.learning/EXPERIMENT_OBSERVE", { experimentId: e1.id, text: `Recalled more words after morning study ${stamp}` });
@@ -427,6 +428,61 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.evaluate(() => { location.hash = "#/learning/not-a-view"; }); await page.waitForSelector("#briefing h1");
   check("Security: an unknown hash view falls back to Today, not to a data screen", true);
 
+  // ── Capture: a sentence becomes a draft; nothing is saved until the owner confirms ──────────────────────────────────────────────
+  const apiGet = (path) => page.evaluate(async (p) => (await (await fetch(p, { headers: { "X-Requested-With": "guidehub-cockpit" } })).json()), path);
+  await page.getByRole("link", { name: "Capture", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Capture')");
+  await page.getByLabel("What happened, what did you decide, what did you learn?").fill("E2E-MIXED I worked three hours on Angel OS and realised I should test it before adding features.");
+  await page.getByRole("button", { name: "Interpret" }).click();
+  await page.waitForSelector("[data-proposal]");
+  const prop = page.locator("[data-proposal]");
+  const ptxt = await prop.textContent();
+  check("Capture: the draft says nothing has been saved yet", ptxt.includes("Nothing has been saved yet."));
+  check("Capture: an inference is labelled as not a fact and the model's confidence is shown as not evidence", ptxt.includes("Interpretation (not a fact)") && ptxt.includes("not evidence, and not saved"));
+  check("Capture: an unsupported state change is explained and cannot be ticked; an unknown kind is listed as not understood", ptxt.includes("must cite evidence") && (await prop.locator("[data-status=UNSUPPORTED] input[type=checkbox]").count()) === 0 && ptxt.includes("isn't something Jarvis can capture"));
+  check("Capture: the model's clarification is shown, not answered for you", ptxt.includes("personally tested this, or learned it as general knowledge"));
+  const tasksBefore = JSON.stringify(await apiGet("/api/tasks"));
+  const memBefore = JSON.stringify(await apiGet("/api/memory/search?q=E2E"));
+  check("Capture: nothing was written by interpreting (no task, no memory yet)", !tasksBefore.includes("E2E run the validation scenarios") && !memBefore.includes("E2E worked three hours"));
+  await page.screenshot({ path: `${SP}/20-capture-draft.png`, fullPage: true });
+  // untick the next action: it must NOT be saved
+  await prop.getByLabel("Save item 3").uncheck();
+  await prop.getByRole("button", { name: "Confirm selected" }).click();
+  await page.waitForSelector("[data-outcome]");
+  const outs = await page.locator("[data-outcome]").evaluateAll((els) => els.map((e) => e.getAttribute("data-outcome")));
+  check("Capture: confirming reports honest per-item outcomes (two saved, the unticked one not saved)", outs.filter((o) => o === "EXECUTED").length === 2 && outs.filter((o) => o === "SKIPPED").length >= 1, outs.join(","));
+  const memAfter = await apiGet("/api/memory/search?q=E2E");
+  const hit = JSON.stringify(memAfter);
+  check("Capture: the experience was saved as an EXPERIENCE and the inference as an unconfirmed INFERENCE — never as a fact", hit.includes("E2E worked three hours") && /"type":"EXPERIENCE"/.test(hit) && /"type":"INFERENCE"/.test(hit) && !/"type":"FACT"/.test(hit) && !hit.includes('"status":"ACTIVE","type":"INFERENCE"'));
+  check("Capture: the unticked next action was not saved", !JSON.stringify(await apiGet("/api/tasks")).includes("E2E run the validation scenarios"));
+  check("Capture: a confirmed draft cannot be confirmed again from the screen", await page.getByRole("button", { name: "Confirm selected" }).isDisabled());
+  // cancel path
+  await page.reload(); await page.waitForSelector("h1:has-text('Capture')");
+  await page.getByLabel("What happened, what did you decide, what did you learn?").fill("E2E-CANCEL a thing I do not want saved");
+  await page.getByRole("button", { name: "Interpret" }).click();
+  await page.waitForSelector("[data-proposal]");
+  const cancelId = await page.locator("[data-proposal]").getAttribute("data-proposal");
+  await page.getByRole("button", { name: "Cancel — save nothing" }).click();
+  await page.waitForSelector("text=Cancelled. Nothing was saved.");
+  check("Capture: cancelling saves nothing", !JSON.stringify(await apiGet("/api/tasks")).includes("E2E never saved"));
+  // security from the signed-in browser
+  probing = true;
+  const cprobe = (method, path, body) => page.evaluate(async ([m, p, b]) => (await fetch(p, { method: m, headers: { "X-Requested-With": "guidehub-cockpit", "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined })).status, [method, path, body]);
+  check("Capture security: a cancelled draft can't be confirmed (404)", (await cprobe("POST", `/api/capture/${cancelId}/confirm`, {})) === 404);
+  check("Capture security: only interpret/confirm/cancel exist — GET, approve and other verbs are 404", (await cprobe("GET", "/api/capture")) === 404 && (await cprobe("POST", `/api/capture/${cancelId}/approve`, {})) === 404 && (await cprobe("DELETE", "/api/capture")) === 404);
+  check("Capture security: a principal or extra field in the body is refused", [400, 404].includes(await cprobe("POST", "/api/capture", { text: "E2E-CANCEL x", principalId: "00000000-0000-0000-0000-0000000000ff" })));
+  if (TOKEN_B) {
+    const foreign = await (await fetch(`${API}/api/capture`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN_B}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: "E2E-CANCEL foreign draft" }) })).json();
+    const fid = foreign.data?.proposalId;
+    check("Capture security: another principal's draft can be neither confirmed nor cancelled from this cockpit", !!fid && (await cprobe("POST", `/api/capture/${fid}/confirm`, {})) === 404 && (await cprobe("POST", `/api/capture/${fid}/cancel`, {})) === 404);
+  }
+  await page.waitForTimeout(300); probing = false;
+  const anonC = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const anonP = await anonC.newPage(); await anonP.goto(`${URL_}/`); probing = true;
+  const anonStatus = await anonP.evaluate(async () => (await fetch("/api/capture", { method: "POST", headers: { "X-Requested-With": "guidehub-cockpit", "Content-Type": "application/json" }, body: JSON.stringify({ text: "x" }) })).status);
+  check("Capture security: signed out, /api/capture answers 401", anonStatus === 401, String(anonStatus));
+  await anonC.close(); probing = false;
+
   await page.getByRole("link", { name: "Today", exact: true }).click();
   await page.waitForSelector("#briefing h1");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -444,6 +500,9 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("link", { name: "Learning", exact: true }).click(); await page.waitForSelector("h1:has-text('Learning')"); await page.waitForSelector("section:has-text('Objectives')"); await page.waitForTimeout(400);
   check("Learning has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
   await page.screenshot({ path: `${SP}/17-learning-mobile.png`, fullPage: true });
+  await page.getByRole("link", { name: "Capture", exact: true }).click(); await page.waitForSelector("h1:has-text('Capture')"); await page.waitForTimeout(300);
+  check("Capture has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
+  await page.screenshot({ path: `${SP}/21-capture-mobile.png`, fullPage: true });
   await page.getByRole("link", { name: "Today", exact: true }).click(); await page.waitForSelector("#briefing h1");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   check("no horizontal scroll at phone width", !overflow);

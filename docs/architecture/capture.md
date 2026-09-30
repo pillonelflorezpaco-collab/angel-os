@@ -37,6 +37,10 @@ only a fixed whitelist of actions can run; a dependent item (a state citing an e
 
 Not capturable (no candidate type): FACT, KNOWLEDGE, objectives, study sessions, aspiration/experiment creation.
 
+## Wiring
+- **API** (`api/captureRoutes.ts`): `POST /api/capture {text}` → a draft (nothing saved; 503 when no interpreter is connected), `POST /api/capture/:id/confirm {accept?}`, `POST /api/capture/:id/cancel {}`. Identity is the token's; strict bodies; another principal's draft is a 404. The interpreter is `createApp({ captureProvider })`; none is bundled, so a default server answers 503.
+- **Cockpit** (`#/capture`, `guidehub/public/capture.js`): one screen — write a sentence, see the draft ("Nothing has been saved yet."), tick items, Confirm / Cancel. It sends back only the ticked item numbers. The proxy allow-list gained exactly the three POST routes (28 rules).
+- Browser E2E drives it with `guidehub/e2e/api-with-interpreter.ts` (real API + scripted interpreter).
+
 ## Not built
-No real model provider, no route or UI (the service is exercised by tests only and is not yet wired into Jarvis Core or HTTP), no edit beyond confirming a subset, no
-draft retention job, no rate limit on interpretation.
+No real model provider (so a normal server has no interpreter), not wired into `JarvisCore.handle`, no edit beyond confirming a subset, no draft retention job, no rate limit on interpretation.
