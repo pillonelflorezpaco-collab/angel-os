@@ -12,6 +12,8 @@ import type { IdentityContext } from "../identity/index.js";
 import { DeterministicContextEngine } from "../context/retrieval/index.js";
 import { formatContext } from "../context/format.js";
 import { orchestrate } from "../orchestration/orchestrator.js";
+import { interpretCapture, confirmLatestCapture, cancelLatestCapture, formatProposal, formatOutcomes, type ItemOutcome } from "../skills/system/capture.js";
+import type { CaptureModelProvider } from "../capture/provider.js";
 import { NullModelProvider, type ModelProvider } from "../orchestration/types.js";
 import { toSafeError, logInternalError } from "./errors.js";
 import type { Result } from "./types/index.js";
@@ -25,6 +27,13 @@ export function setModelProvider(provider: ModelProvider | null): void {
   modelProvider = provider ?? new NullModelProvider();
 }
 registerSkillActions();
+
+// Optional capture interpreter: turns a sentence Core did not otherwise understand into a DRAFT proposal (nothing saved). None = the
+// previous behaviour. "confirm" / "cancel" then act on the newest pending draft from the same interface, through the ordinary action path.
+let captureProvider: CaptureModelProvider | null = null;
+export function setCaptureProvider(provider: CaptureModelProvider | null): void {
+  captureProvider = provider;
+}
 
 export interface JarvisRequest {
   principalId: string;
@@ -127,7 +136,26 @@ export class JarvisCore {
         };
       }
 
+      case "capture.confirm": {
+        if (!request.identity) return NO_IDENTITY;
+        const r = await confirmLatestCapture(request.identity);
+        if (r.status !== "EXECUTED") return r;
+        const outcomes = (r.data as { outcomes: ItemOutcome[] }).outcomes;
+        return { status: "EXECUTED", message: formatOutcomes(outcomes), data: r.data };
+      }
+
+      case "capture.cancel": {
+        if (!request.identity) return NO_IDENTITY;
+        const r = await cancelLatestCapture(request.identity);
+        return r.status === "EXECUTED" ? { status: "EXECUTED", message: "Cancelled. Nothing was saved.", data: r.data } : r;
+      }
+
       case "unknown":
+        if (captureProvider && request.identity) {
+          const r = await interpretCapture(request.identity, { text: request.input, provider: captureProvider });
+          if (r.status !== "EXECUTED") return r;
+          return { status: "EXECUTED", message: formatProposal(r.data as Parameters<typeof formatProposal>[0]), data: r.data };
+        }
         if (modelProvider.name !== "none" && request.identity) {
           const context = await new DeterministicContextEngine().buildContext({ identity: request.identity, agentKey: JARVIS_AGENT_KEY, query: request.input });
           return orchestrate(request.identity, request.input, { provider: modelProvider, context });

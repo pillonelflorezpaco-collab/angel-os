@@ -8,6 +8,8 @@ export type IntentName =
   | "reminder.list"
   | "memory.remember"
   | "memory.search"
+  | "capture.confirm"
+  | "capture.cancel"
   | "decision.query"
   | "calendar.today"
   | "activity.today"

@@ -18,3 +18,7 @@ export async function claimDraft(principalId: string, id: string, to: "CONFIRMED
 export async function writeOutcome(principalId: string, id: string, outcome: unknown) {
   await getDb().captureProposal.updateMany({ where: { id, principalId, status: "CONFIRMED", outcome: { equals: Prisma.DbNull } }, data: { outcome: outcome as Prisma.InputJsonValue } });
 }
+
+/** The owner's newest still-pending, unexpired draft made from this same interface (so "confirm" in one place never confirms what was drafted in another). */
+export const latestPending = (principalId: string, interfaceSource: string, now: Date) =>
+  getDb().captureProposal.findFirst({ where: { principalId, interfaceSource, status: "PENDING", expiresAt: { gt: now } }, orderBy: { createdAt: "desc" } });

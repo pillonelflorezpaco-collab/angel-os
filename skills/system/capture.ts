@@ -153,3 +153,43 @@ export async function cancelCapture(identity: IdentityContext, input: { proposal
 }
 
 class NotFound extends PublicError { constructor() { super(NOT_FOUND.message); } }
+
+// ── Conversation helpers (Jarvis Core: "confirm" / "cancel" refer to the newest pending draft from this interface) ──
+async function latestPendingId(who: IdentityContext): Promise<string | null> {
+  const r = await gatewayExecute({ principalId: who.principalId, agentKey: JARVIS_AGENT_KEY, skillKey: SKILL_KEY, resource: RESOURCE, action: DECIDE_ACTION, parameters: { op: "latest" } },
+    async () => (await store.latestPending(who.principalId, who.interfaceSource, now()))?.id ?? null, SOURCE);
+  return r.status === "EXECUTED" ? (r.data as string | null) : null;
+}
+const NOTHING_PENDING: Result = { status: "FAILED", message: "There is nothing waiting to be confirmed." };
+export async function confirmLatestCapture(identity: IdentityContext): Promise<Result> {
+  let who: IdentityContext;
+  try { who = assertExplicitIdentity(identity); } catch { return FAILED_IDENTITY; }
+  const id = await latestPendingId(who);
+  return id ? confirmCapture(who, { proposalId: id }) : NOTHING_PENDING;
+}
+export async function cancelLatestCapture(identity: IdentityContext): Promise<Result> {
+  let who: IdentityContext;
+  try { who = assertExplicitIdentity(identity); } catch { return FAILED_IDENTITY; }
+  const id = await latestPendingId(who);
+  return id ? cancelCapture(who, { proposalId: id }) : NOTHING_PENDING;
+}
+
+type ProposalView = ReturnType<typeof view>;
+/** Plain-language text for a chat surface. The wording is the server's; nothing the model wrote is treated as an instruction. */
+export function formatProposal(p: ProposalView): string {
+  const lines: string[] = [];
+  if (p.failClosed) return `${p.failClosed} Nothing was proposed and nothing has been saved.`;
+  if (p.items.length) {
+    lines.push("I understood:");
+    p.items.forEach((i, n) => lines.push(`${n + 1}. ${i.type}: ${i.summary}${i.status === "READY" ? "" : ` — ${i.status === "NEEDS_CLARIFICATION" ? "needs a clarification" : "can't be saved"}${i.note ? ` (${i.note})` : ""}`}`));
+  } else if (!p.clarifications.length) lines.push("I didn't find anything I can save from that.");
+  for (const c of p.clarifications) lines.push(`Question: ${c.question}${c.options?.length ? ` (${c.options.join(" / ")})` : ""}`);
+  for (const r of p.rejected) lines.push(`Not understood (item ${r.index + 1}): ${r.reason}`);
+  const ready = p.items.filter((i) => i.status === "READY").length;
+  lines.push(ready ? `Nothing has been saved yet. Say “confirm” to save the ${ready} ready item${ready === 1 ? "" : "s"}, or “cancel”.` : "Nothing has been saved.");
+  return lines.join("\n");
+}
+const OUTCOME_WORDS: Record<ItemOutcome["status"], string> = { EXECUTED: "Saved", PENDING_APPROVAL: "Waiting for your approval", DENIED: "Not allowed", FAILED: "Failed — nothing saved", SKIPPED: "Not saved" };
+export function formatOutcomes(outcomes: ItemOutcome[]): string {
+  return outcomes.length ? outcomes.map((o) => `${o.index + 1}. ${o.type}: ${OUTCOME_WORDS[o.status]} — ${o.message}`).join("\n") : "There was nothing to save.";
+}

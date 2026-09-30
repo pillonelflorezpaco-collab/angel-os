@@ -35,6 +35,10 @@ export function parseIntent(raw: string): Intent {
     return { name: "task.list", raw: text, slots: {} };
   }
 
+  // Only these exact words act on a pending capture draft; anything else that merely contains them is not a confirmation.
+  if (/^confirm( (that|it|all|the (draft|proposal|capture)))?[.!]*$/i.test(lower)) return { name: "capture.confirm", raw: text, slots: {} };
+  if (/^cancel( (that|it|the (draft|proposal|capture)))?[.!]*$/i.test(lower)) return { name: "capture.cancel", raw: text, slots: {} };
+
   if (/^(remember|note) (that )?/i.test(lower)) {
     const content = text.replace(/^(remember|note) (that )?/i, "").trim();
     return { name: "memory.remember", raw: text, slots: { content } };

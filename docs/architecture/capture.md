@@ -42,5 +42,7 @@ Not capturable (no candidate type): FACT, KNOWLEDGE, objectives, study sessions,
 - **Cockpit** (`#/capture`, `guidehub/public/capture.js`): one screen — write a sentence, see the draft ("Nothing has been saved yet."), tick items, Confirm / Cancel. It sends back only the ticked item numbers. The proxy allow-list gained exactly the three POST routes (28 rules).
 - Browser E2E drives it with `guidehub/e2e/api-with-interpreter.ts` (real API + scripted interpreter).
 
+- **Jarvis Core** (`core/index.ts`, `setCaptureProvider`): when a capture interpreter is set, a sentence Core's deterministic router does not understand becomes a draft, shown in words ("I understood: … Nothing has been saved yet. Say “confirm” … or “cancel”."). Deterministic intents (tasks, reminders, "remember that …", searches) always win and never reach the interpreter. Only the exact words `confirm` / `cancel` (a few fixed variants) act, and only on the caller's own newest pending draft from the *same interface* — a "confirm" from Telegram never confirms a cockpit draft, and voice still ends in "Waiting for your approval". With no interpreter set (the default) Core behaves exactly as before. This also lets the cockpit's Ask box and Telegram reach capture once a provider is connected.
+
 ## Not built
-No real model provider (so a normal server has no interpreter), not wired into `JarvisCore.handle`, no edit beyond confirming a subset, no draft retention job, no rate limit on interpretation.
+No real model provider (so a normal server has no interpreter), "remember that …" is still stored as a FACT by the deterministic router (it does not go through capture), no edit beyond confirming a subset, no draft retention job, no rate limit on interpretation.
