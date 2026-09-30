@@ -1,6 +1,6 @@
 import express from "express";
 import { z } from "zod";
-import { JARVIS_AGENT_KEY } from "../core/index.js";
+import { JARVIS_AGENT_KEY, setCaptureProvider } from "../core/index.js";
 import { handleInterfaceMessage, MAX_INPUT_CHARS } from "../application/dispatcher.js";
 import { getContext, MAX_CONTEXT_QUERY_CHARS } from "../application/context.js";
 import { createTask, listTasks, createReminder, listReminders } from "../skills/system/tasks.js";
@@ -18,6 +18,7 @@ import { BearerTokenAuthenticator, getPrincipalProfile, type Authenticator } fro
 import { lifeRouter } from "./lifeRoutes.js";
 import { captureRouter } from "./captureRoutes.js";
 import type { CaptureModelProvider } from "../capture/provider.js";
+import { captureProviderFromEnv } from "../capture/anthropic.js";
 import { asyncRoute, authenticate, cors, errorHandler, identityOf, parseCorsOrigins, rejectPrincipalOverride } from "./middleware.js";
 
 // The HTTP interface. It is an ADAPTER: it authenticates the caller into an
@@ -367,7 +368,10 @@ export function createApp(options: AppOptions = {}) {
   return app;
 }
 
-export const app = createApp();
+// The interpreter is opt-in by environment (ANGEL_OS_CAPTURE_PROVIDER=anthropic + ANTHROPIC_API_KEY); tests never set it. Misconfiguration refuses to start.
+const captureProvider = captureProviderFromEnv();
+if (captureProvider) setCaptureProvider(captureProvider);
+export const app = createApp({ captureProvider });
 
 const port = Number(process.env.PORT ?? 3000);
 

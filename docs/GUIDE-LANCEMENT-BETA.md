@@ -2,7 +2,7 @@
 
 But : faire tourner Angel OS **sur ta machine**, l'ouvrir dans le navigateur et vérifier que ça marche. Rien à déployer sur le VPS, rien à pousser sur GitHub, BlackOS n'est pas concerné.
 
-> **À savoir avant de commencer** : aucun modèle de langage n'est branché. Tout le cockpit marche à la main (formulaires). L'écran **Capture** répondra « aucun interprète n'est connecté » — c'est normal, ce n'est pas une panne. Voir §7.
+> **À savoir avant de commencer** : le modèle de langage est **facultatif**. Sans lui, tout le cockpit marche à la main (formulaires) et l'écran **Capture** répond « aucun interprète n'est connecté » — c'est normal. Pour l'activer, voir §5 bis.
 
 ---
 
@@ -76,6 +76,23 @@ npm run guidehub
 
 Ouvre **http://127.0.0.1:3100** et connecte-toi avec ton mot de passe.
 
+## 5 bis. (Facultatif) Activer le modèle pour la Capture
+Sans ça, rien ne change. Avec ça, tu peux écrire une phrase normale (dans **Capture**, ou dans la zone « Ask Jarvis ») et Jarvis te propose un **brouillon** : tu vois ce qui serait enregistré, puis tu dis **confirm** ou **cancel**. Rien n'est enregistré avant ta confirmation.
+
+Dans le terminal 1 (l'API), ajoute ces variables avant `npm start` :
+```bash
+ANGEL_OS_CAPTURE_PROVIDER=anthropic \
+ANTHROPIC_API_KEY='sk-ant-…' \
+npm start
+```
+- La clé vient de ton compte Anthropic (console) ; elle reste dans ton terminal, jamais dans le code ni dans Git.
+- Par défaut le modèle est `claude-opus-5-5` ; pour un modèle moins cher : `ANGEL_OS_CAPTURE_MODEL=claude-haiku-4-5`.
+- **Plafond de dépense** : 200 appels par jour maximum (`ANGEL_OS_CAPTURE_MAX_CALLS_PER_DAY=…` pour changer). Chaque appel est petit (phrase ≤ 4000 caractères, réponse ≤ 4000 jetons) : compte quelques centimes par phrase au plus avec le modèle par défaut. Fixe aussi une limite de dépense dans ta console Anthropic.
+- Si tu demandes le modèle sans clé, l'API **refuse de démarrer** avec un message clair (c'est voulu).
+- Le modèle ne reçoit que ta phrase et des *titres* (objectifs, projets…), jamais d'identifiants ni de secrets, et il ne peut rien exécuter.
+
+Essai : dans Capture, écris « Aujourd'hui j'ai travaillé trois heures sur Angel OS et j'ai réalisé qu'il faut tester avant d'ajouter des fonctions. » → tu dois voir un brouillon avec *Expérience* et *Interprétation (pas un fait)*, puis **Confirmer**.
+
 ## 6. Checklist de la bêta — ce que tu peux vérifier à la main
 Coche au fur et à mesure. Chaque ligne = quelque chose qui doit marcher.
 
@@ -108,14 +125,15 @@ Coche au fur et à mesure. Chaque ligne = quelque chose qui doit marcher.
 - [ ] Mode sombre (réglage de ton système) : lisible.
 
 **Capture**
-- [ ] L'écran répond « Aucun interprète n'est connecté » (attendu tant que §7 n'est pas fait).
+- [ ] Sans modèle : l'écran répond « Aucun interprète n'est connecté ».
+- [ ] Avec modèle (§5 bis) : une phrase donne un brouillon ; « Nothing has been saved yet » s'affiche ; une *interprétation* est marquée « pas un fait » ; **Confirmer** enregistre, **Annuler** n'enregistre rien.
 
 Si quelque chose ne marche pas : note *l'écran*, *ce que tu as fait*, *le message* — c'est tout ce qu'il faut pour le corriger.
 
 ## 7. Ce qui manque encore (honnêtement)
 | Sujet | Où on en est |
 |---|---|
-| **Comprendre tes phrases** (Capture / Jarvis) | Le circuit est prêt (brouillon → tu confirmes → enregistré), mais **aucun modèle n'est branché**. À décider ensemble : quel modèle, où ranger la clé, quelle limite de dépense. |
+| **Comprendre tes phrases** (Capture / Jarvis) | Le circuit est prêt et un modèle Claude peut être branché (§5 bis). **Pas encore testé avec un vrai appel** dans mon environnement (pas de clé) : ton premier essai est le vrai test. |
 | « remember that … » | Enregistre tout comme un *fait*, même une expérience vécue. À corriger avec la Capture. |
 | « Qu'est-ce qui compte aujourd'hui / la semaine prochaine ? » | Non compris par Jarvis (rien n'est inventé). Le cockpit « Aujourd'hui » sert de substitut. |
 | Résumé de la semaine | Ne compte que les événements qui écrivent de l'activité (observations, leçons, résultats n'en écrivent pas encore). |
