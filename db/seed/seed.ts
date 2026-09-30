@@ -77,6 +77,12 @@ async function main() {
     create: { key: "system.capture", name: "System Capture", description: "Draft proposals from a sentence; nothing is saved until the owner confirms." },
   });
 
+  const todaySkill = await db.skill.upsert({
+    where: { key: "system.today" },
+    update: {},
+    create: { key: "system.today", name: "System Today", description: "Open loops and factual badges (read-only)." },
+  });
+
   const calendarSkill = await db.skill.upsert({
     where: { key: "integrations.calendar" },
     update: {},
@@ -189,6 +195,8 @@ async function main() {
     // draft is its own ActionDefinition with its own permission row above.
     { resource: "angel:capture", action: "CAPTURE_INTERPRET", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
     { resource: "angel:capture", action: "CAPTURE_DECIDE", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
+    { resource: "angel:today", action: "TODAY_READ", category: "READ", state: "ALLOWED", skillId: todaySkill.id },
+    { resource: "angel:today", action: "PROGRESS_READ", category: "READ", state: "ALLOWED", skillId: todaySkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
       resource: "angel:decisions",
@@ -250,7 +258,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, captureSkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, captureSkill, todaySkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
   );
 }
 

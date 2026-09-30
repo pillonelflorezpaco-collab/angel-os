@@ -46,6 +46,10 @@ export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/learning\/(topics|sessions|objectives|experiments)$/ },
   { method: "GET", path: new RegExp(`^/api/learning/experiments/${UUID}$`) },
   actions("system.future", ["ASPIRATION_CREATE", "ASPIRATION_STATE_RECORD", "EVIDENCE_ATTACH"]),
+  // ── Memory & Knowledge screen (search/browse are the existing read routes) + open loops and factual badges ──
+  { method: "GET", path: /^\/api\/today\/loops$/ },
+  { method: "GET", path: /^\/api\/progress\/badges$/ },
+  actions("system.memory", ["MEMORY_CONFIRM", "MEMORY_RETRACT"]),
   // ── Capture: a sentence becomes a DRAFT; nothing is saved until confirm, and each confirmed item is an ordinary action ──
   { method: "POST", path: /^\/api\/capture$/ },
   { method: "POST", path: new RegExp(`^/api/capture/${UUID}/confirm$`) },

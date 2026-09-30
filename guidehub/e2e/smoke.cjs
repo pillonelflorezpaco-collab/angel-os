@@ -68,6 +68,10 @@ async function seedGrowth(stamp) {
   growth.candidate = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Evening flashcards help ${stamp}`, method: "10 cards after dinner" });
   const topic = await act("system.learning/TOPIC_CREATE", { title: `Italian ${stamp}` });
   await act("system.learning/SESSION_LOG", { topicId: topic.id, minutes: 25, note: "verbs" });
+  await act("system.memory/MEMORY_CREATE", { type: "INFERENCE", content: "MEMSEED I probably think better in the morning", source: "e2e", confidence: 0.4 });
+  await act("system.memory/MEMORY_CREATE", { type: "EXPERIENCE", content: "MEMSEED I finished the cockpit screens today", source: "e2e" });
+  await act("system.memory/MEMORY_CREATE", { type: "FACT", content: "MEMSEED temp wrong fact", source: "e2e" });
+  await act("system.knowledge/KNOWLEDGE_ADD", { kind: "CONCEPT", title: "KNOWSEED Spaced repetition", body: "Reviewing at growing intervals improves retention." });
   if (TOKEN_B) growth.foreign = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Someone else's experiment ${stamp}`, method: "private" }, TOKEN_B);
 }
 let crashPage = null; // for a screenshot if the run crashes
@@ -428,6 +432,66 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.evaluate(() => { location.hash = "#/learning/not-a-view"; }); await page.waitForSelector("#briefing h1");
   check("Security: an unknown hash view falls back to Today, not to a data screen", true);
 
+  // ── Memory & Knowledge, open loops, factual badges ─────────────────────────────────────────────────────────────────────────────
+  await page.getByRole("link", { name: "Memory", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Memory & Knowledge')");
+  await page.getByLabel("Search", { exact: true }).fill("MEMSEED");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.waitForSelector("[data-memory]");
+  const inf = page.locator("[data-type=INFERENCE]", { hasText: "MEMSEED I probably think" });
+  const infText = await inf.textContent();
+  check("Memory: an inference is labelled 'not a fact' and unconfirmed; an experience says lived; provenance is shown", infText.includes("Inference — not a fact") && infText.includes("Unconfirmed") && infText.includes("Inferred by Jarvis") && (await page.locator("[data-type=EXPERIENCE]").first().textContent()).includes("Experience (lived)") && (await page.locator("[data-type=EXPERIENCE]").first().textContent()).includes("Personally experienced"));
+  await page.getByLabel("Type", { exact: true }).selectOption("EXPERIENCE");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.waitForSelector("[data-memory][data-type=EXPERIENCE]");
+  await page.waitForFunction(() => document.querySelectorAll("[data-memory][data-type=INFERENCE]").length === 0);
+  check("Memory: filtering by type shows only that type", (await page.locator("[data-memory][data-type=EXPERIENCE]").count()) >= 1 && (await page.locator("[data-memory][data-type=FACT]").count()) === 0);
+  await page.getByLabel("Type", { exact: true }).selectOption("");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.waitForSelector("[data-type=INFERENCE]");
+  const inf2 = page.locator("[data-type=INFERENCE]", { hasText: "MEMSEED I probably think" });
+  await inf2.getByRole("button", { name: "Confirm this is right" }).click();
+  await inf2.getByRole("button", { name: "Yes, it's right" }).click();
+  await inf2.locator(".outcome").waitFor({ timeout: 8000 });
+  const confirmOutcome = await inf2.locator(".outcome").textContent();
+  check("Memory: confirming an inference is an explicit two-step action, goes through the ordinary action path (approval when policy says so), and is reported honestly", /approval|Confirmed|confirmed/i.test(confirmOutcome), confirmOutcome.slice(0, 80));
+  const wrong = page.locator("[data-type=FACT]", { hasText: "MEMSEED temp wrong fact" });
+  await wrong.getByRole("button", { name: "Mark as wrong" }).click();
+  await wrong.getByRole("button", { name: "Mark as wrong" }).last().click(); // empty reason first: the browser itself blocks it
+  check("Memory: marking as wrong needs a reason (the reason field is required)", await wrong.locator("textarea").evaluate((el) => el.required && el.validity.valueMissing) && (await wrong.locator(".outcome").count()) === 0);
+  await wrong.locator("textarea").fill("It was a test entry");
+  await wrong.getByRole("button", { name: "Mark as wrong" }).last().click();
+  await wrong.locator(".outcome").waitFor({ timeout: 8000 });
+  const wrongOutcome = await wrong.locator(".outcome").textContent();
+  check("Memory: marking as wrong is reported honestly (done, or waiting for approval) — never silently", /approval|wrong|retract|Marked|Memory/i.test(wrongOutcome), wrongOutcome.slice(0, 80));
+  check("Memory: no delete or edit control exists", (await page.getByRole("button", { name: /^(Delete|Edit|Remove)/ }).count()) === 0);
+  await page.getByLabel("Look in").selectOption("knowledge");
+  await page.getByLabel("Search", { exact: true }).fill("KNOWSEED");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.waitForSelector("[data-knowledge]");
+  check("Knowledge: an item shows its kind and that it is about the world, not about you", (await page.locator("[data-knowledge]").first().textContent()).includes("About the world, not about you") && (await page.locator("[data-knowledge]").first().textContent()).includes("KNOWSEED Spaced repetition"));
+  await page.screenshot({ path: `${SP}/22-memory.png`, fullPage: true });
+  probing = true;
+  const mprobe = (method, path, body) => page.evaluate(async ([m, p, b]) => (await fetch(p, { method: m, headers: { "X-Requested-With": "guidehub-cockpit", "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined })).status, [method, path, body]);
+  check("Memory security: delete, update and create are not reachable from the cockpit; knowledge item detail isn't either", (await mprobe("POST", "/api/actions/system.memory/MEMORY_DELETE", {})) === 404 && (await mprobe("POST", "/api/actions/system.memory/MEMORY_UPDATE", {})) === 404 && (await mprobe("POST", "/api/actions/system.memory/MEMORY_CREATE", {})) === 404 && (await mprobe("GET", "/api/knowledge/items/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e")) === 404);
+  await page.waitForTimeout(300); probing = false;
+
+  await page.getByRole("link", { name: "Today", exact: true }).click();
+  await page.waitForSelector("#loops section h2:has-text('What matters')");
+  await page.waitForSelector("#badges section h2:has-text('On record')");
+  const lt = await page.textContent("#loops");
+  check("Today: 'What matters' lists real open items with the reason each is listed", lt.includes("Due now") && lt.includes(`Second look ${STAMP}`) && lt.includes("look-back date for this decision has passed") && lt.includes("Still open") && lt.includes("Angel OS as a daily system") && lt.includes("no open next action linked"));
+  check("Today: open experiments and objectives appear as open loops; nothing is scored", lt.includes(`Morning study sticks better ${STAMP}`) && lt.includes("Nothing is scored or invented") && !/(\d\s?%|\bxp\b|\blevel\b|\bscore\b)/i.test(lt));
+  const bt = await page.textContent("#badges");
+  check("Today: badges are factual — each states its rule and count; earned ones say Earned; there is no percentage, level or XP", bt.includes("First decision on record") && bt.includes("Rule: 1 decision recorded") && bt.includes("Earned") && bt.includes("Not earned yet") && !/(\d\s?%|\bxp\b|\blevel\b|\bscore\b)/i.test(bt), bt.slice(0, 200));
+  check("Today: the streak line is a count of real days", /(Current run: \d+ day|No days in a row|No current run)/.test(bt));
+  await page.getByPlaceholder(/Ask Jarvis/).fill("What matters today?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.waitForSelector("p.pre:has-text('Due now')", { timeout: 8000 });
+  check("Jarvis answers 'What matters today?' from the same open loops", (await page.textContent("p.pre")).includes(`Second look ${STAMP}`));
+  check("Ask on Today leaves you on Today (a stale refresh from another screen must not swap the view)", (await page.locator("#loops section h2").count()) >= 1 && (await page.locator("h1:has-text('Learning')").count()) === 0);
+  await page.screenshot({ path: `${SP}/23-today-loops.png`, fullPage: true });
+
   // ── Capture: a sentence becomes a draft; nothing is saved until the owner confirms ──────────────────────────────────────────────
   const apiGet = (path) => page.evaluate(async (p) => (await (await fetch(p, { headers: { "X-Requested-With": "guidehub-cockpit" } })).json()), path);
   await page.getByRole("link", { name: "Capture", exact: true }).click();
@@ -503,6 +567,11 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("link", { name: "Capture", exact: true }).click(); await page.waitForSelector("h1:has-text('Capture')"); await page.waitForTimeout(300);
   check("Capture has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
   await page.screenshot({ path: `${SP}/21-capture-mobile.png`, fullPage: true });
+  for (const [nav, sel] of [["Memory", "h1:has-text('Memory & Knowledge')"], ["Today", "#loops section"]]) {
+    await page.getByRole("link", { name: nav, exact: true }).click(); await page.waitForSelector(sel); await page.waitForTimeout(400);
+    check(`${nav} has no horizontal scroll at phone width`, !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
+    await page.screenshot({ path: `${SP}/24-${nav.toLowerCase()}-mobile.png`, fullPage: true });
+  }
   await page.getByRole("link", { name: "Today", exact: true }).click(); await page.waitForSelector("#briefing h1");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   check("no horizontal scroll at phone width", !overflow);
@@ -530,4 +599,4 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   process.exit(failed.length ? 1 : 0);
-})().catch(async (e) => { console.error("E2E crashed:", e.message); try { if (crashPage) { await crashPage.screenshot({ path: `${SP}/crash.png`, fullPage: true }); console.error((await crashPage.textContent("main")).slice(0, 600)); } } catch { /* best effort */ } process.exit(2); });
+})().catch(async (e) => { console.error("E2E crashed:", e.message); try { if (crashPage) { await crashPage.screenshot({ path: `${SP}/crash.png`, fullPage: true }); console.error((await crashPage.textContent("main")).slice(0, 3000)); } } catch { /* best effort */ } process.exit(2); });

@@ -103,3 +103,9 @@ Decide the interpretation design first (P1.1): a small, reviewable "capture" ste
 
 ## Not to build yet
 Embeddings/vector search, Mem0, gamified scores, more cockpit screens, autonomous execution, connectors, deployment automation, BlackOS bridge.
+
+
+## Update — after the Memory / Today build
+- P2 "no what-matters assembly" is **closed**: Jarvis and the cockpit Today answer "what matters" from real open loops, each with its reason (`progress/loops.ts`). The grade for S10 NEXT-WEEK PRIORITIES is now PASS.
+- New: `#/memory` (browse/search memory and knowledge with types preserved) and factual badges (thresholds on real counts; no points/levels/percentages).
+- Still open from the report: capture of free text needs a live model test; activity coverage; task→result and decision↔lesson relational links; VPS packaging.

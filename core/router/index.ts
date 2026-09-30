@@ -35,6 +35,9 @@ export function parseIntent(raw: string): Intent {
     return { name: "task.list", raw: text, slots: {} };
   }
 
+  // "What matters?" — open loops that already exist; English and French phrasings.
+  if (/^(what matters|what should i (do|focus on)|what.?s (open|waiting|next)|what remains open|qu.est-ce qui compte|qu.est-ce que je dois faire|quoi faire)\b/i.test(lower)) return { name: "today.loops", raw: text, slots: {} };
+
   // Only these exact words act on a pending capture draft; anything else that merely contains them is not a confirmation.
   if (/^confirm( (that|it|all|the (draft|proposal|capture)))?[.!]*$/i.test(lower)) return { name: "capture.confirm", raw: text, slots: {} };
   if (/^cancel( (that|it|the (draft|proposal|capture)))?[.!]*$/i.test(lower)) return { name: "capture.cancel", raw: text, slots: {} };

@@ -183,7 +183,7 @@ export function linkablePeople(all, linked) {
   return (all ?? []).filter((p) => !taken.has(p.id));
 }
 
-/** Hash routes: #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
+/** Hash routes: #/memory, #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
 export function parseRoute(hash) {
   const h = String(hash ?? "").replace(/^#\/?/, "");
   if (h === "" || h === "today") return { view: "today" };
@@ -191,6 +191,7 @@ export function parseRoute(hash) {
   const m = /^life\/projects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
   if (m) return { view: "project", id: m[1] };
   if (h === "capture") return { view: "capture" };
+  if (h === "memory") return { view: "memory" };
   if (h === "future-self") return { view: "future" };
   if (h === "learning") return { view: "learning" };
   if (h === "decisions") return { view: "decisions" };
@@ -377,4 +378,37 @@ export function captureOutcomeLabel(status) {
 /** Body for confirm: the item numbers the owner ticked. No text, ids or labels ever travel back — the server holds the exact draft. */
 export function buildCaptureConfirmBody(checkedIndexes) {
   return { accept: [...new Set(checkedIndexes)].filter((n) => Number.isInteger(n) && n >= 0 && n < 8).sort((a, b) => a - b) };
+}
+
+// ── Memory & Knowledge screen, open loops, factual badges ─────────────────
+export const MEMORY_TYPE_LABELS = {
+  EXPERIENCE: "Experience (lived)", INFERENCE: "Inference — not a fact", FACT: "Fact (as you stated it)", LESSON: "Lesson", PREFERENCE: "Preference", PRINCIPLE: "Principle",
+  DECISION: "Decision", GOAL: "Goal", HABIT: "Habit", PERSON: "Person", PROJECT: "Project", RELATIONSHIP: "Relationship",
+};
+export const memoryTypeLabel = (t) => MEMORY_TYPE_LABELS[t] ?? String(t ?? "memory").toLowerCase();
+export const MEMORY_FILTERS = Object.keys(MEMORY_TYPE_LABELS);
+export const memoryStatusLabel = (s) => ({ ACTIVE: "Active", UNCONFIRMED: "Unconfirmed", EXPIRED: "Expired", RETRACTED: "Retracted — marked wrong" }[s] ?? String(s ?? "").toLowerCase());
+export const provenanceLabel = (p) => ({ STATED: "Stated by you", OBSERVED: "Observed", EXPERIENCED: "Personally experienced", INFERRED: "Inferred by Jarvis" }[p] ?? String(p ?? "").toLowerCase());
+/** Confirming says "yes, this is right" — only an unconfirmed inference is waiting for that. */
+export const canConfirmMemory = (m) => m?.type === "INFERENCE" && m?.status === "UNCONFIRMED";
+export const canRetractMemory = (m) => !!m && m.status !== "RETRACTED";
+
+/** Where an open-loop item leads. Only known kinds link anywhere; nothing is built from API text. */
+export function loopHref(ref) {
+  if (!ref) return null;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  if (ref.type === "decision" && UUID.test(ref.id)) return `#/decisions/${ref.id}`;
+  if (ref.type === "aspiration") return "#/future-self";
+  if (ref.type === "experiment" || ref.type === "objective") return "#/learning";
+  if (ref.type === "quest") return "#/life";
+  return null;
+}
+export const LOOP_GROUPS = [{ key: "NOW", label: "Due now" }, { key: "NEXT", label: "Coming up" }, { key: "OPEN", label: "Still open" }];
+
+/** "3 of 10" — a count, never a percentage. */
+export const badgeProgress = (b) => (b.earned ? "Earned" : `${b.have} of ${b.need}`);
+export function streakLine(s) {
+  if (!s || !s.longest) return "No days in a row on record yet.";
+  const now = s.current ? `Current run: ${s.current} day${s.current === 1 ? "" : "s"}${s.endsToday ? "" : " (nothing recorded yet today)"}.` : "No current run.";
+  return `${now} Longest so far: ${s.longest} day${s.longest === 1 ? "" : "s"}.`;
 }

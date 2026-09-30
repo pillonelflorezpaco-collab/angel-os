@@ -98,11 +98,19 @@ Coche au fur et à mesure. Chaque ligne = quelque chose qui doit marcher.
 
 **Aujourd'hui**
 - [ ] La page d'accueil (« Aujourd'hui ») s'affiche sans erreur.
+- [ ] Le bloc **« What matters »** liste tes vraies boucles ouvertes (tâches en retard ou proches, bilans de décisions dus, prochaines actions, expériences non closes), avec **la raison** de chaque ligne. Rien n'est noté ni inventé.
+- [ ] Le bloc **« On record »** montre tes **badges factuels** : chacun affiche sa règle et « 3 sur 10 » (jamais de pourcentage, de niveau ni de points), plus ta série de jours consécutifs réels.
+- [ ] Dans « Ask Jarvis », `What matters today?` (ou « qu'est-ce qui compte aujourd'hui ») répond avec la même liste.
 - [ ] Tu peux poser une question dans « Ask Jarvis » : `add task Acheter du lait`, puis `what are my tasks`.
 
 **Life** (visions, objectifs, projets, quêtes, tâches)
 - [ ] Créer un objectif, puis un projet lié, puis une tâche dans ce projet.
 - [ ] Terminer la tâche ; elle apparaît comme faite.
+
+**Mémoire** (nouvel écran « Memory »)
+- [ ] Chercher dans « Memory — about you » : chaque entrée garde son type (Expérience vécue, *Inférence — pas un fait*, Fait, Leçon…) et sa provenance.
+- [ ] Filtrer par type ; passer sur « Knowledge — about the world ».
+- [ ] « Confirm this is right » sur une inférence non confirmée, ou « Mark as wrong » avec une raison : les deux passent par les règles d'approbation habituelles ; rien n'est supprimé, il n'y a ni bouton Supprimer ni Modifier.
 
 **Décisions**
 - [ ] Enregistrer une décision (avec options, pourquoi, résultat attendu, date de bilan).

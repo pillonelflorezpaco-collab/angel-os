@@ -7,6 +7,7 @@ import { readLifeOverview, readLifeHistory, readProject, readPeople, readResults
 import { readDecision, listDecisionRecords } from "../skills/system/decisions.js";
 import { readFutureOverview, readAspiration, readStateTimeline } from "../skills/system/future.js";
 import { readLearningOverview, readDueCards, readCard, readObjectives, readSessions, readExperiments, readExperiment } from "../skills/system/learning.js";
+import { readOpenLoops, readBadges } from "../skills/system/today.js";
 import { asyncRoute, identityOf } from "./middleware.js";
 
 // GuideHub-ready surface for the Life OS domains (BUILD #18). Still an ADAPTER: identity comes from the
@@ -78,6 +79,10 @@ export function lifeRouter(): express.Router {
     respond(res, await readResults(identityOf(req), { agentKey, ...q.data }));
   }));
   r.get("/reviews", asyncRoute(async (req, res) => respond(res, await readReviews(identityOf(req), { agentKey }))));
+
+  // ── What matters + factual badges (read-only) ──────────────────────────
+  r.get("/today/loops", asyncRoute(async (req, res) => respond(res, await readOpenLoops(identityOf(req)))));
+  r.get("/progress/badges", asyncRoute(async (req, res) => respond(res, await readBadges(identityOf(req)))));
 
   // ── Future Self ─────────────────────────────────────────────────────────
   r.get("/future/aspirations", asyncRoute(async (req, res) => respond(res, await readFutureOverview(identityOf(req), { agentKey }))));

@@ -22,7 +22,7 @@ registerSkillActions();
 const READS: [string, string, string][] = [
   ["system.tasks", "angel:tasks", "READ"], ["system.memory", "angel:memory", "MEMORY_READ"], ["system.knowledge", "angel:knowledge", "KNOWLEDGE_READ"],
   ["system.life", "angel:life", "LIFE_READ"], ["system.future", "angel:future", "FUTURE_READ"], ["system.learning", "angel:learning", "LEARNING_READ"],
-  ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"],
+  ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"], ["system.today", "angel:today", "TODAY_READ"], ["system.today", "angel:today", "PROGRESS_READ"],
 ];
 
 describe("Angel OS real-world validation v1", () => {
@@ -277,9 +277,10 @@ describe("Angel OS real-world validation v1", () => {
     const types = [...new Set(act7.map((a) => a.type))].sort();
     record(S, "ACTIVITY COVERAGE", types.includes("DECISION") ? "PARTIAL" : "FAIL", `Activity types present after the week: ${types.join(", ") || "none"}. Not present: ${(["DECISION", "TASK_COMPLETED", "MEMORY_CREATED", "LEARNING_SESSION", "ACHIEVEMENT", "GOAL_PROGRESS"] as string[]).filter((t) => !(types as string[]).includes(t)).join(", ") || "none"}. Experiment observations, experiment status changes, lessons, results and state records produce no activity.`);
     const next = await say("what matters for next week");
-    expect(next.status).toBe("FAILED"); // not understood — and, importantly, not fabricated
-    expect(next.message).not.toMatch(/priorit/i);
-    record(S, "NEXT-WEEK PRIORITIES", "NOT IMPLEMENTED", "\"What matters next week / today\" is not understood. The raw ingredients exist (open tasks, aspirations' next task, decisions due for review, experiments not yet closed) but nothing assembles them, so nothing is fabricated either.");
+    expect(next.status).toBe("EXECUTED"); // closed since validation v1: answered from real open loops (progress/loops.ts)
+    expect(next.message).not.toMatch(/priorit|important|should/i); // still no invented priorities
+    for (const line of next.message.split("\n").filter((l) => l.startsWith("•"))) expect(line, line).toMatch(/ — .{10,}/); // every item carries the reason it is listed
+    record(S, "NEXT-WEEK PRIORITIES", "PASS", "\"what matters\" is now understood and answered from real open loops (tasks, due look-backs, next actions, open experiments/objectives), each with its reason; nothing is scored or invented. (Was NOT IMPLEMENTED in validation v1.)");
     const c = await ctx("what matters next week");
     record(S, "OPEN LOOPS", "PARTIAL", `Context exposes open tasks (${c.currentTasks.length}) and active goals/projects, but not decisions due for review, open experiments/objectives, or aspirations' next actions as open loops.`);
   });

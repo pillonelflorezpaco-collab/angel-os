@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, memoryTypeLabel, memoryStatusLabel, provenanceLabel, canConfirmMemory, canRetractMemory, loopHref, badgeProgress, streakLine, MEMORY_FILTERS, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -266,7 +266,7 @@ describe("Decision rules (step 3)", () => {
 });
 
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "memory.js", "today.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -337,7 +337,7 @@ describe("frontend safety (static checks)", () => {
     expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "memory.js", "styles.css", "today.js", "ui.js"]);
   });
 });
 
@@ -441,5 +441,55 @@ describe("Capture screen", () => {
     expect(captureStatusLabel("UNSUPPORTED")).toMatch(/Can't be saved/);
     expect(cap).toContain("Nothing has been saved yet.");
     expect(cap).toMatch(/not evidence, and not saved/);
+  });
+});
+
+
+describe("Memory screen, open loops and badges (cockpit)", () => {
+  const mem = read("memory.js");
+  const today = read("today.js");
+  const UUID = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+  it("route #/memory only", () => {
+    expect(parseRoute("#/memory")).toEqual({ view: "memory" });
+    for (const bad of ["#/memory/", `#/memory/${UUID}`, "#/Memory"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+  });
+  it("every type keeps its meaning on screen: an inference is never a fact, a retraction is visible", () => {
+    expect(memoryTypeLabel("INFERENCE")).toMatch(/not a fact/);
+    expect(memoryTypeLabel("EXPERIENCE")).toMatch(/lived/);
+    expect(memoryTypeLabel("FACT")).toMatch(/as you stated it/);
+    expect(memoryStatusLabel("RETRACTED")).toMatch(/marked wrong/);
+    expect(memoryStatusLabel("UNCONFIRMED")).toBe("Unconfirmed");
+    expect(provenanceLabel("INFERRED")).toBe("Inferred by Jarvis");
+    expect(provenanceLabel("EXPERIENCED")).toBe("Personally experienced");
+    expect(MEMORY_FILTERS).toContain("LESSON");
+    for (const t of MEMORY_FILTERS) expect(memoryTypeLabel(t), t).not.toBe(t.toLowerCase());
+  });
+  it("only what is waiting for it can be confirmed; anything not already retracted can be marked wrong; nothing is ever deleted from here", () => {
+    expect(canConfirmMemory({ type: "INFERENCE", status: "UNCONFIRMED" })).toBe(true);
+    for (const m of [{ type: "INFERENCE", status: "ACTIVE" }, { type: "FACT", status: "UNCONFIRMED" }, { type: "EXPERIENCE", status: "ACTIVE" }, null]) expect(canConfirmMemory(m as any), JSON.stringify(m)).toBe(false);
+    expect(canRetractMemory({ status: "ACTIVE" })).toBe(true);
+    expect(canRetractMemory({ status: "RETRACTED" })).toBe(false);
+    expect(mem).not.toMatch(/MEMORY_DELETE|MEMORY_UPDATE|MEMORY_CREATE|KNOWLEDGE_/);
+  });
+  it("only the routes and actions the proxy allows are used", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    for (const p of ["/api/memory/search?q=x&type=LESSON", "/api/knowledge/search?q=x", "/api/today/loops", "/api/progress/badges"]) expect(matchRule("GET", p.split("?")[0]), p).toBeDefined();
+    for (const a of ["MEMORY_CONFIRM", "MEMORY_RETRACT"]) expect(matchRule("POST", `/api/actions/system.memory/${a}`), a).toBeDefined();
+    expect(mem.match(/"system\.memory",\s*"[A-Z_]+"/g)?.sort()).toEqual(['"system.memory", "MEMORY_CONFIRM"', '"system.memory", "MEMORY_RETRACT"']);
+  });
+  it("open-loop links go only to known screens and never from unvalidated text; badges show counts, never percentages", () => {
+    expect(loopHref({ type: "decision", id: UUID })).toBe(`#/decisions/${UUID}`);
+    expect(loopHref({ type: "decision", id: "javascript:alert(1)" })).toBeNull();
+    expect(loopHref({ type: "aspiration", id: "x" })).toBe("#/future-self");
+    expect(loopHref({ type: "experiment", id: "x" })).toBe("#/learning");
+    expect(loopHref({ type: "task", id: UUID })).toBeNull();
+    expect(loopHref({ type: "weird", id: UUID })).toBeNull();
+    expect(loopHref(null)).toBeNull();
+    expect(badgeProgress({ earned: false, have: 3, need: 10 })).toBe("3 of 10");
+    expect(badgeProgress({ earned: true, have: 12, need: 10 })).toBe("Earned");
+    expect(badgeProgress({ earned: false, have: 0, need: 1 })).toBe("0 of 1"); // zero is stated, not hidden
+    expect(streakLine({ current: 0, longest: 0, endsToday: false })).toBe("No days in a row on record yet.");
+    expect(streakLine({ current: 2, longest: 5, endsToday: false })).toBe("Current run: 2 days (nothing recorded yet today). Longest so far: 5 days.");
+    expect(today).not.toMatch(/Math\.round|progressLabel|\bxp\b|\blevel\b|\bscore\b|%/i);
   });
 });

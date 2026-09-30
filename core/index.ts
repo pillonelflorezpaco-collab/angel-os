@@ -13,6 +13,7 @@ import { DeterministicContextEngine } from "../context/retrieval/index.js";
 import { formatContext } from "../context/format.js";
 import { orchestrate } from "../orchestration/orchestrator.js";
 import { interpretCapture, confirmLatestCapture, cancelLatestCapture, formatProposal, formatOutcomes, type ItemOutcome } from "../skills/system/capture.js";
+import { readOpenLoops, formatLoops } from "../skills/system/today.js";
 import type { CaptureModelProvider } from "../capture/provider.js";
 import { NullModelProvider, type ModelProvider } from "../orchestration/types.js";
 import { toSafeError, logInternalError } from "./errors.js";
@@ -134,6 +135,12 @@ export class JarvisCore {
           message: `Today's calendar:\n${formatEventsAsContext(events, timeZone)}`,
           data: events,
         };
+      }
+
+      case "today.loops": {
+        if (!request.identity) return NO_IDENTITY;
+        const r = await readOpenLoops(request.identity);
+        return r.status === "EXECUTED" ? { status: "EXECUTED", message: formatLoops(r.data as Parameters<typeof formatLoops>[0]), data: r.data } : r;
       }
 
       case "capture.confirm": {

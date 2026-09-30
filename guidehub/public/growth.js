@@ -147,7 +147,6 @@ export async function renderFuture(view) {
   mount(view, h("h1", { text: "Future Self" }),
     h("p", { class: "muted", text: "Current state → desired state → gap → evidence → next action. What's shown is what you recorded and what the evidence says — not a verdict." }),
     cards.length ? cards : section("Aspirations", empty("No aspirations are recorded yet.")), create);
-  state.refresh = refresh;
 }
 
 // ── Learning ──────────────────────────────────────────────────────────────
@@ -235,5 +234,4 @@ export async function renderLearning(view) {
   const topicSection = Array.isArray(topics) && topics.length ? section("Topics", h("ul", { class: "list" }, topics.map((t) => h("li", { class: "stack" }, h("strong", { text: t.title }), " ", pill(statusLabel(t.status)), h("span", { class: "muted", text: `${t.minutesLast30Days} minutes in the last 30 days (self-reported)` }))))) : null;
 
   mount(view, h("h1", { text: "Learning" }), objectiveSection, expSection, sessionSection, topicSection);
-  state.refresh = refresh;
 }
