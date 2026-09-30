@@ -51,6 +51,8 @@ model Principal {
   learningExperiments LearningExperiment[]
   reviews             Review[]
   CaptureProposal     CaptureProposal[]
+  Routine             Routine[]
+  RoutineCheck        RoutineCheck[]
 
   @@map("principals")
 }
@@ -1354,4 +1356,63 @@ model CaptureProposal {
 
   @@index([principalId, status])
   @@map("capture_proposals")
+}
+
+// ── Routines ──────────────────────────────────────────────────────────────
+// What the OWNER planned for a recurring part of their day (a meal, a habit, a block of time), and a plain record of whether it was done.
+// Angel OS holds the plan and reminds; it never invents a plan, and a check-in is a fact (DONE or SKIPPED), never a score.
+
+enum RoutineKind {
+  MEAL
+  HABIT
+  BLOCK
+  OTHER
+}
+
+enum RoutineStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED // terminal
+}
+
+enum RoutineCheckStatus {
+  DONE
+  SKIPPED
+}
+
+model Routine {
+  id              String        @id @default(uuid())
+  principalId     String
+  principal       Principal     @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  title           String
+  kind            RoutineKind   @default(OTHER)
+  details         String? // the owner's own words: what to eat, what to do
+  daysOfWeek      Int[] // 0 = Sunday … 6 = Saturday, in the owner's timezone
+  timeOfDay       String // "HH:MM", the owner's local time
+  durationMinutes Int?
+  status          RoutineStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  checks RoutineCheck[]
+
+  @@index([principalId, status])
+  @@map("routines")
+}
+
+// Append-only: one check-in per routine per local day. A day that was not checked is simply "not recorded", never a failure.
+model RoutineCheck {
+  id          String             @id @default(uuid())
+  principalId String
+  principal   Principal          @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  routineId   String
+  routine     Routine            @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  day         String // local calendar day, YYYY-MM-DD
+  status      RoutineCheckStatus
+  note        String?
+  createdAt   DateTime           @default(now())
+
+  @@unique([routineId, day])
+  @@index([principalId, day])
+  @@map("routine_checks")
 }

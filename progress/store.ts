@@ -12,7 +12,7 @@ export async function collectFacts(principalId: string, now: Date): Promise<{ fa
   const principal = await db.principal.findUnique({ where: { id: principalId }, select: { timezone: true } });
   const tz = principal?.timezone ?? "UTC";
   const since = new Date(now.getTime() - 400 * 86_400_000);
-  const [tasksDone, questsCompleted, decisionsRecorded, decisionsReviewed, sessions, observations, closed, rejected, lessons, experiences, statesEvidenced, objectivesMet, activity] = await Promise.all([
+  const [tasksDone, questsCompleted, decisionsRecorded, decisionsReviewed, sessions, observations, closed, rejected, lessons, experiences, statesEvidenced, objectivesMet, routineCheckIns, activity] = await Promise.all([
     db.task.count({ where: { principalId, status: "DONE" } }),
     db.quest.count({ where: { principalId, status: "COMPLETED" } }),
     db.decision.count({ where: { principalId } }),
@@ -25,12 +25,13 @@ export async function collectFacts(principalId: string, now: Date): Promise<{ fa
     db.memory.count({ where: { principalId, type: "EXPERIENCE", status: { not: "RETRACTED" } } }),
     db.aspirationState.count({ where: { principalId, basis: "EVIDENCED" } }),
     db.learningObjective.count({ where: { principalId, status: "MET" } }),
+    db.routineCheck.count({ where: { principalId, status: "DONE" } }),
     db.activity.findMany({ where: { principalId, occurredAt: { gte: since, lte: now } }, select: { occurredAt: true }, take: 20_000 }),
   ]);
   const activityDays = [...new Set(activity.map((a) => localDay(a.occurredAt, tz)))];
   const facts: Facts = {
     tasksDone, questsCompleted, decisionsRecorded, decisionsReviewed, learningSessions: sessions._count._all, learningMinutes: sessions._sum.minutes ?? 0,
-    observations, experimentsClosed: closed, experimentsRejected: rejected, lessons, experiences, statesEvidenced, objectivesMet, activityDays,
+    observations, experimentsClosed: closed, experimentsRejected: rejected, lessons, experiences, statesEvidenced, objectivesMet, routineCheckIns, activityDays,
   };
   return { facts, today: localDay(now, tz) };
 }

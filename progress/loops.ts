@@ -10,6 +10,8 @@ export interface LoopInput {
   experiments: { id: string; hypothesis: string; status: string }[];
   objectives: { id: string; title: string; status: string; evidence: { total: number } }[];
   cardsDue: number;
+  /** Today's planned routine items on the owner's clock (already resolved to their recorded state). */
+  routines: { routineId: string; title: string; time: string; state: string }[];
 }
 
 export type LoopGroup = "NOW" | "NEXT" | "OPEN";
@@ -35,6 +37,10 @@ export function buildLoops(i: LoopInput): { NOW: Loop[]; NEXT: Loop[]; OPEN: Loo
     if (r.status === "PENDING" && r.remindAt.getTime() <= now + DAY) out.push({ kind: "REMINDER", group: "NOW", title: r.message, why: r.remindAt.getTime() < now ? "A reminder that was due and hasn't been delivered." : "A reminder due within 24 hours.", when: iso(r.remindAt), ref: { type: "reminder", id: r.id } });
   }
   for (const d of i.decisionsDue) out.push({ kind: "DECISION_REVIEW", group: "NOW", title: d.title, why: "The look-back date for this decision has passed and it has no look-back yet.", when: iso(d.reviewAt), ref: { type: "decision", id: d.id } });
+  for (const r of i.routines) {
+    if (r.state === "PAST_UNRECORDED") out.push({ kind: "ROUTINE", group: "NOW", title: r.title, why: `Scheduled for ${r.time} today; no check-in is recorded yet.`, when: null, ref: { type: "routine", id: r.routineId } });
+    else if (r.state === "UPCOMING") out.push({ kind: "ROUTINE", group: "NEXT", title: r.title, why: `Scheduled for ${r.time} today.`, when: null, ref: { type: "routine", id: r.routineId } });
+  }
   if (i.cardsDue > 0) out.push({ kind: "CARDS", group: "NOW", title: `${i.cardsDue} recall card${i.cardsDue === 1 ? "" : "s"} due`, why: "Cards scheduled for review have come due.", when: null, ref: null });
 
   for (const a of i.aspirations) {

@@ -9,6 +9,7 @@ export type IntentName =
   | "memory.remember"
   | "memory.search"
   | "today.loops"
+  | "routine.today"
   | "capture.confirm"
   | "capture.cancel"
   | "decision.query"

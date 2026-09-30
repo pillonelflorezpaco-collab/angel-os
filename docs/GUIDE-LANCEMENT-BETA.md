@@ -107,6 +107,14 @@ Coche au fur et à mesure. Chaque ligne = quelque chose qui doit marcher.
 - [ ] Créer un objectif, puis un projet lié, puis une tâche dans ce projet.
 - [ ] Terminer la tâche ; elle apparaît comme faite.
 
+**Routines** (nouvel écran « Routines »)
+- [ ] Ajouter une routine (par ex. « Déjeuner », type Repas, tous les jours, 12:30, avec ce que TU veux manger dans les détails).
+- [ ] Le bloc « Today » la montre à la bonne heure, sur ton fuseau horaire : « À venir — dans X min » ou « Non enregistré » si l'heure est passée (jamais « raté »).
+- [ ] « Done » / « Skip today » enregistrent un simple constat (un seul par routine et par jour, non modifiable). Pas de score.
+- [ ] Modifier les détails ou l'heure, mettre en pause / reprendre, archiver (définitif).
+- [ ] Dans « Ask Jarvis » : `What do I eat today?` ou « qu'est-ce que je mange aujourd'hui » → il affiche **ton** plan, jamais un plan inventé (sans routine : il le dit).
+- [ ] Une routine dont l'heure est passée sans constat apparaît dans « What matters » (Due now) avec sa raison.
+
 **Mémoire** (nouvel écran « Memory »)
 - [ ] Chercher dans « Memory — about you » : chaque entrée garde son type (Expérience vécue, *Inférence — pas un fait*, Fait, Leçon…) et sa provenance.
 - [ ] Filtrer par type ; passer sur « Knowledge — about the world ».

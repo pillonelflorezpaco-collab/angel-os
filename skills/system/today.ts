@@ -7,6 +7,7 @@ import { readFutureOverview } from "./future.js";
 import { readExperiments, readObjectives, readLearningOverview } from "./learning.js";
 import { listDecisionRecords } from "./decisions.js";
 import { listTasks, listReminders } from "./tasks.js";
+import { readTodayPlan } from "./routines.js";
 import { buildLoops, type LoopInput } from "../../progress/loops.js";
 import * as progress from "../../progress/store.js";
 
@@ -29,9 +30,9 @@ export async function readOpenLoops(identity: IdentityContext): Promise<Result> 
   const agentKey = JARVIS_AGENT_KEY;
   return gatewayExecute({ principalId: who.principalId, agentKey, skillKey: SKILL_KEY, resource: RESOURCE, action: LOOPS_ACTION, parameters: { op: "loops" } }, async () => {
     const at = now();
-    const [tasks, reminders, decisions, future, experiments, objectives, learning] = await Promise.all([
+    const [tasks, reminders, decisions, future, experiments, objectives, learning, plan] = await Promise.all([
       listTasks(who, { agentKey }), listReminders(who, { agentKey }), listDecisionRecords(who, { agentKey, dueForReview: true }), readFutureOverview(who, { agentKey }),
-      readExperiments(who, { agentKey }), readObjectives(who, { agentKey }), readLearningOverview(who, { agentKey, now: at }),
+      readExperiments(who, { agentKey }), readObjectives(who, { agentKey }), readLearningOverview(who, { agentKey, now: at }), readTodayPlan(who, { agentKey }),
     ]);
     const withheld: string[] = [];
     const use = <T>(name: string, r: Result): T[] => { const v = rows<T>(r); if (!v) withheld.push(name); return v ?? []; };
@@ -44,6 +45,7 @@ export async function readOpenLoops(identity: IdentityContext): Promise<Result> 
       experiments: use<LoopInput["experiments"][number]>("experiments", experiments),
       objectives: use<LoopInput["objectives"][number]>("objectives", objectives),
       cardsDue: use<{ due: number }>("learning", learning).reduce((n, t) => n + (t.due ?? 0), 0),
+      routines: plan.status === "EXECUTED" ? (plan.data as { items: LoopInput["routines"] }).items : (withheld.push("routines"), []),
     };
     return { generatedAt: at.toISOString(), ...buildLoops(input), withheld, note: "Everything listed already exists and is still open. Nothing is scored or invented." };
   }, SOURCE);

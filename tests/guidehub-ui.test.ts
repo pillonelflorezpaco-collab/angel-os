@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, memoryTypeLabel, memoryStatusLabel, provenanceLabel, canConfirmMemory, canRetractMemory, loopHref, badgeProgress, streakLine, MEMORY_FILTERS, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, routineKindLabel, describeRoutineDays, routineStateLabel, canCheckRoutine, buildRoutineBody, memoryTypeLabel, memoryStatusLabel, provenanceLabel, canConfirmMemory, canRetractMemory, loopHref, badgeProgress, streakLine, MEMORY_FILTERS, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -266,7 +266,7 @@ describe("Decision rules (step 3)", () => {
 });
 
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "memory.js", "today.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "memory.js", "routines.js", "today.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -337,7 +337,7 @@ describe("frontend safety (static checks)", () => {
     expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "memory.js", "styles.css", "today.js", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "memory.js", "routines.js", "styles.css", "today.js", "ui.js"]);
   });
 });
 
@@ -491,5 +491,48 @@ describe("Memory screen, open loops and badges (cockpit)", () => {
     expect(streakLine({ current: 0, longest: 0, endsToday: false })).toBe("No days in a row on record yet.");
     expect(streakLine({ current: 2, longest: 5, endsToday: false })).toBe("Current run: 2 days (nothing recorded yet today). Longest so far: 5 days.");
     expect(today).not.toMatch(/Math\.round|progressLabel|\bxp\b|\blevel\b|\bscore\b|%/i);
+  });
+});
+
+
+describe("Routines screen", () => {
+  const rt = read("routines.js");
+  const UUID = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+  it("route #/routines only; open-loop routine items link there", () => {
+    expect(parseRoute("#/routines")).toEqual({ view: "routines" });
+    for (const bad of ["#/routines/", `#/routines/${UUID}`, "#/Routines"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+    expect(loopHref({ type: "routine", id: UUID })).toBe("#/routines");
+  });
+  it("only the routes and actions the proxy allows are used", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    for (const p of ["/api/routines", "/api/routines/today"]) expect(matchRule("GET", p), p).toBeDefined();
+    const names = [...rt.matchAll(/\bSK,\s*"([A-Z_]+)"/g)].map((m) => m[1]);
+    expect([...new Set(names)].sort()).toEqual(["ROUTINE_CHECK", "ROUTINE_CREATE", "ROUTINE_SET_STATUS", "ROUTINE_UPDATE"]);
+    for (const n of names) expect(matchRule("POST", `/api/actions/system.routines/${n}`), n).toBeDefined();
+    expect(rt).not.toMatch(/ROUTINE_DELETE|MEMORY_|principalId/);
+  });
+  it("wording never judges: a passed time with nothing recorded is 'Not recorded yet'; there is no missed/failed/score/streak language", () => {
+    expect(routineStateLabel({ state: "PAST_UNRECORDED" })).toBe("Not recorded yet");
+    expect(routineStateLabel({ state: "DONE" })).toBe("Done");
+    expect(routineStateLabel({ state: "SKIPPED" })).toBe("Skipped");
+    expect(routineStateLabel({ state: "UPCOMING", minutesUntil: 45 })).toBe("Upcoming — in 45 min");
+    expect(routineStateLabel({ state: "UPCOMING", minutesUntil: 210 })).toBe("Upcoming — in 3 h 30 min");
+    expect(rt).not.toMatch(/\b(missed|failed|late|overdue|score|streak|xp|level)\b|%/i);
+    for (const s of ["PAST_UNRECORDED", "DONE", "SKIPPED", "UPCOMING"]) expect(routineStateLabel({ state: s, minutesUntil: 5 }), s).not.toMatch(/missed|fail|late/i);
+  });
+  it("only an unchecked item offers Done/Skip; days read naturally", () => {
+    expect(canCheckRoutine({ state: "UPCOMING" }) && canCheckRoutine({ state: "PAST_UNRECORDED" })).toBe(true);
+    expect(canCheckRoutine({ state: "DONE" }) || canCheckRoutine({ state: "SKIPPED" }) || canCheckRoutine(null)).toBe(false);
+    expect(describeRoutineDays([5, 1, 2, 3, 4])).toBe("Weekdays");
+    expect(describeRoutineDays([0, 1, 2, 3, 4, 5, 6])).toBe("Every day");
+    expect(describeRoutineDays([1, 3])).toBe("Monday, Wednesday");
+    expect(routineKindLabel("MEAL")).toBe("Meal");
+  });
+  it("the create body carries only the owner's fields; empty optionals are left out; the server decides validity", () => {
+    expect(buildRoutineBody({ title: " Lunch ", kind: "MEAL", details: "", timeOfDay: "12:30", durationMinutes: "" }, [3, 1, 1])).toEqual({ body: { title: "Lunch", daysOfWeek: [1, 3], timeOfDay: "12:30", kind: "MEAL" }, errors: [] });
+    expect(buildRoutineBody({ title: "", timeOfDay: "" }, []).errors).toHaveLength(3);
+    expect(buildRoutineBody({ title: "x", timeOfDay: "07:00", durationMinutes: "abc" }, [1]).errors).toContain("The duration must be a whole number of minutes.");
+    expect(JSON.stringify(buildRoutineBody({ title: "x", timeOfDay: "07:00", principalId: "evil" } as any, [1]).body)).not.toContain("evil");
+    expect(routineKindLabel("WEIRD")).toBe("weird");
   });
 });

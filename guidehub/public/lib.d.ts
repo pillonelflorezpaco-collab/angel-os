@@ -64,3 +64,10 @@ export function loopHref(ref: { type: string; id: string } | null): string | nul
 export const LOOP_GROUPS: { key: string; label: string }[];
 export function badgeProgress(b: { earned: boolean; have: number; need: number }): string;
 export function streakLine(s: any): string;
+export const ROUTINE_KINDS: { value: string; label: string }[];
+export function routineKindLabel(k: string): string;
+export const WEEKDAYS: { value: number; label: string }[];
+export function describeRoutineDays(days: number[]): string;
+export function routineStateLabel(item: any): string;
+export function canCheckRoutine(item: any): boolean;
+export function buildRoutineBody(values: Record<string, string>, days: number[]): { body: any; errors: string[] };

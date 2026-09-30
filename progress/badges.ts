@@ -16,6 +16,7 @@ export interface Facts {
   experiences: number;
   statesEvidenced: number;
   objectivesMet: number;
+  routineCheckIns: number;
   /** Distinct local calendar days with recorded activity, as YYYY-MM-DD. */
   activityDays: string[];
 }
@@ -61,6 +62,7 @@ export function evaluateBadges(f: Facts, today: string): { badges: Badge[]; stre
     at("first-evidenced-state", "First evidenced state change", "1 Future Self state recorded with evidence", f.statesEvidenced, 1),
     at("first-lesson", "First lesson", "1 lesson recorded", f.lessons, 1),
     at("experiences-10", "10 experiences recorded", "10 lived experiences recorded", f.experiences, 10),
+    at("routine-10", "10 routine check-ins", "10 routine check-ins marked done", f.routineCheckIns, 10),
     at("objective-met", "An objective met with evidence", "1 learning objective marked met", f.objectivesMet, 1),
     at("streak-3", "3 days in a row", "recorded activity on 3 consecutive days (longest run so far)", s.longest, 3),
     at("streak-7", "7 days in a row", "recorded activity on 7 consecutive days (longest run so far)", s.longest, 7),

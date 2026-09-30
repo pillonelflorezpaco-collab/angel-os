@@ -5,6 +5,7 @@ import { renderDecision, renderDecisions } from "./decisions.js";
 import { renderFuture, renderLearning } from "./growth.js";
 import { renderCapture } from "./capture.js";
 import { renderMemory } from "./memory.js";
+import { renderRoutines } from "./routines.js";
 import { renderLoops, renderBadges } from "./today.js";
 
 // GuideHub cockpit: shell (sign-in, navigation, hash router, Ask Jarvis), the Today view, and approvals. Life screens live in life.js.
@@ -54,7 +55,7 @@ function renderShell() {
   const signOut = h("button", { class: "link", text: "Sign out", onclick: async () => { await api("DELETE", "/session"); showSignIn(); } });
   const nav = h("nav", { class: "tabs", "aria-label": "Main" },
     h("a", { id: "nav-today", href: "#/today", text: "Today" }), h("a", { id: "nav-life", href: "#/life", text: "Life" }), h("a", { id: "nav-decisions", href: "#/decisions", text: "Decisions" }),
-    h("a", { id: "nav-capture", href: "#/capture", text: "Capture" }), h("a", { id: "nav-memory", href: "#/memory", text: "Memory" }), h("a", { id: "nav-future", href: "#/future-self", text: "Future Self" }), h("a", { id: "nav-learning", href: "#/learning", text: "Learning" }),
+    h("a", { id: "nav-capture", href: "#/capture", text: "Capture" }), h("a", { id: "nav-routines", href: "#/routines", text: "Routines" }), h("a", { id: "nav-memory", href: "#/memory", text: "Memory" }), h("a", { id: "nav-future", href: "#/future-self", text: "Future Self" }), h("a", { id: "nav-learning", href: "#/learning", text: "Learning" }),
     h("a", { id: "nav-approvals", href: "#/today", class: "badge-link", hidden: true }));
   const header = h("header", { class: "bar" }, h("strong", { class: "brand", text: "GuideHub" }), nav,
     h("span", { class: "who" }, who, state.me ? h("span", { class: "pill", text: state.me.interface.toLowerCase() }) : null), signOut);
@@ -94,7 +95,7 @@ function renderRoute() {
   const view = document.getElementById("view");
   if (!state.active || !view) return;
   const route = parseRoute(location.hash);
-  for (const [id, on] of [["nav-today", route.view === "today"], ["nav-life", route.view === "life" || route.view === "project"], ["nav-decisions", route.view === "decisions" || route.view === "decision"], ["nav-capture", route.view === "capture"], ["nav-memory", route.view === "memory"], ["nav-future", route.view === "future"], ["nav-learning", route.view === "learning"]]) {
+  for (const [id, on] of [["nav-today", route.view === "today"], ["nav-life", route.view === "life" || route.view === "project"], ["nav-decisions", route.view === "decisions" || route.view === "decision"], ["nav-capture", route.view === "capture"], ["nav-routines", route.view === "routines"], ["nav-memory", route.view === "memory"], ["nav-future", route.view === "future"], ["nav-learning", route.view === "learning"]]) {
     const a = document.getElementById(id);
     if (a) on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   }
@@ -102,6 +103,7 @@ function renderRoute() {
   else if (route.view === "project") renderProject(view, route.id);
   else if (route.view === "capture") renderCapture(view);
   else if (route.view === "memory") renderMemory(view);
+  else if (route.view === "routines") renderRoutines(view);
   else if (route.view === "future") renderFuture(view);
   else if (route.view === "learning") renderLearning(view);
   else if (route.view === "decisions") renderDecisions(view);

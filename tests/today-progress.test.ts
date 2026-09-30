@@ -16,7 +16,7 @@ process.env.NODE_ENV = "test";
 registerSkillActions();
 const { app } = await import("../api/server.js");
 
-const ZERO: Facts = { tasksDone: 0, questsCompleted: 0, decisionsRecorded: 0, decisionsReviewed: 0, learningSessions: 0, learningMinutes: 0, observations: 0, experimentsClosed: 0, experimentsRejected: 0, lessons: 0, experiences: 0, statesEvidenced: 0, objectivesMet: 0, activityDays: [] };
+const ZERO: Facts = { tasksDone: 0, questsCompleted: 0, decisionsRecorded: 0, decisionsReviewed: 0, learningSessions: 0, learningMinutes: 0, observations: 0, experimentsClosed: 0, experimentsRejected: 0, lessons: 0, experiences: 0, statesEvidenced: 0, objectivesMet: 0, routineCheckIns: 0, activityDays: [] };
 const NOW = new Date("2026-10-06T12:00:00Z");
 const H = 3_600_000;
 
@@ -58,7 +58,7 @@ describe("factual badges (pure)", () => {
 });
 
 describe("open loops (pure)", () => {
-  const base: LoopInput = { now: NOW, tasks: [], reminders: [], decisionsDue: [], aspirations: [], experiments: [], objectives: [], cardsDue: 0 };
+  const base: LoopInput = { now: NOW, tasks: [], reminders: [], decisionsDue: [], aspirations: [], experiments: [], objectives: [], cardsDue: 0, routines: [] };
   it("nothing open → nothing listed (no invented priorities)", () => {
     expect(buildLoops(base)).toEqual({ NOW: [], NEXT: [], OPEN: [] });
   });
@@ -114,7 +114,7 @@ describe("what matters + badges through the skills, Jarvis and the API (real dat
   const jarvis = new JarvisCore();
   const READS: [string, string, string][] = [
     ["system.tasks", "angel:tasks", "READ"], ["system.life", "angel:life", "LIFE_READ"], ["system.future", "angel:future", "FUTURE_READ"], ["system.learning", "angel:learning", "LEARNING_READ"],
-    ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"], ["system.today", "angel:today", "TODAY_READ"], ["system.today", "angel:today", "PROGRESS_READ"],
+    ["system.decisions", "angel:decisions", "DECISION_READ"], ["system.activity", "angel:activity", "ACTIVITY_READ"], ["system.today", "angel:today", "TODAY_READ"], ["system.routines", "angel:routines", "ROUTINE_READ"], ["system.today", "angel:today", "PROGRESS_READ"],
   ];
   const ok = async (skill: string, action: string, params: unknown, who = idA()) => { const r = await proposeNamedAction(who, skill, action, params); expect(r.status, JSON.stringify(r)).toBe("EXECUTED"); return r.data as any; };
 

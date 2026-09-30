@@ -183,7 +183,7 @@ export function linkablePeople(all, linked) {
   return (all ?? []).filter((p) => !taken.has(p.id));
 }
 
-/** Hash routes: #/memory, #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
+/** Hash routes: #/routines, #/memory, #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
 export function parseRoute(hash) {
   const h = String(hash ?? "").replace(/^#\/?/, "");
   if (h === "" || h === "today") return { view: "today" };
@@ -192,6 +192,7 @@ export function parseRoute(hash) {
   if (m) return { view: "project", id: m[1] };
   if (h === "capture") return { view: "capture" };
   if (h === "memory") return { view: "memory" };
+  if (h === "routines") return { view: "routines" };
   if (h === "future-self") return { view: "future" };
   if (h === "learning") return { view: "learning" };
   if (h === "decisions") return { view: "decisions" };
@@ -401,6 +402,7 @@ export function loopHref(ref) {
   if (ref.type === "aspiration") return "#/future-self";
   if (ref.type === "experiment" || ref.type === "objective") return "#/learning";
   if (ref.type === "quest") return "#/life";
+  if (ref.type === "routine") return "#/routines";
   return null;
 }
 export const LOOP_GROUPS = [{ key: "NOW", label: "Due now" }, { key: "NEXT", label: "Coming up" }, { key: "OPEN", label: "Still open" }];
@@ -411,4 +413,44 @@ export function streakLine(s) {
   if (!s || !s.longest) return "No days in a row on record yet.";
   const now = s.current ? `Current run: ${s.current} day${s.current === 1 ? "" : "s"}${s.endsToday ? "" : " (nothing recorded yet today)"}.` : "No current run.";
   return `${now} Longest so far: ${s.longest} day${s.longest === 1 ? "" : "s"}.`;
+}
+
+// ── Routines: the owner's own plan ─────────────────────────────────────────
+export const ROUTINE_KINDS = [{ value: "MEAL", label: "Meal" }, { value: "HABIT", label: "Habit" }, { value: "BLOCK", label: "Time block" }, { value: "OTHER", label: "Other" }];
+export const routineKindLabel = (k) => ROUTINE_KINDS.find((x) => x.value === k)?.label ?? String(k ?? "").toLowerCase();
+export const WEEKDAYS = [{ value: 1, label: "Mon" }, { value: 2, label: "Tue" }, { value: 3, label: "Wed" }, { value: 4, label: "Thu" }, { value: 5, label: "Fri" }, { value: 6, label: "Sat" }, { value: 0, label: "Sun" }];
+const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export function describeRoutineDays(days) {
+  const set = [...new Set(days ?? [])].sort((a, b) => a - b);
+  if (set.length === 7) return "Every day";
+  if (set.join() === "1,2,3,4,5") return "Weekdays";
+  if (set.join() === "0,6") return "Weekends";
+  return set.map((d) => DAY_LONG[d]).join(", ");
+}
+/** A passed time with no check-in is "not recorded yet" — never "missed" or "failed". */
+export function routineStateLabel(item) {
+  switch (item?.state) {
+    case "DONE": return "Done";
+    case "SKIPPED": return "Skipped";
+    case "PAST_UNRECORDED": return "Not recorded yet";
+    case "UPCOMING": return item.minutesUntil >= 60 ? `Upcoming — in ${Math.floor(item.minutesUntil / 60)} h ${item.minutesUntil % 60} min` : `Upcoming — in ${item.minutesUntil} min`;
+    default: return String(item?.state ?? "").toLowerCase();
+  }
+}
+export const canCheckRoutine = (item) => item?.state === "UPCOMING" || item?.state === "PAST_UNRECORDED";
+
+/** Body for ROUTINE_CREATE. Optional fields are left out when empty; the server decides what is valid. */
+export function buildRoutineBody(values, days) {
+  const errors = [];
+  const title = String(values.title ?? "").trim();
+  if (!title) errors.push("Give the routine a name.");
+  if (!days.length) errors.push("Pick at least one day.");
+  if (!String(values.timeOfDay ?? "").trim()) errors.push("Pick a time.");
+  const body = { title, daysOfWeek: [...new Set(days)].sort((a, b) => a - b), timeOfDay: String(values.timeOfDay ?? "").trim() };
+  if (values.kind) body.kind = values.kind;
+  const details = String(values.details ?? "").trim();
+  if (details) body.details = details;
+  const dur = String(values.durationMinutes ?? "").trim();
+  if (dur) { const n = Number(dur); if (!Number.isInteger(n)) errors.push("The duration must be a whole number of minutes."); else body.durationMinutes = n; }
+  return { body, errors };
 }

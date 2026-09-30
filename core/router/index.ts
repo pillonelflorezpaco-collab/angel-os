@@ -35,6 +35,9 @@ export function parseIntent(raw: string): Intent {
     return { name: "task.list", raw: text, slots: {} };
   }
 
+  // The owner's OWN plan for today (meals, habits, time blocks) — only what they defined.
+  if (/^(what.?s (on )?my (routine|schedule|plan)|my (routine|schedule|plan)( today)?\b|what do i (eat|have to do|have planned) (today|now|next)|what.?s next in my (routine|schedule)|qu.est-ce que je mange|mon (planning|programme|routine)|mes (routines|horaires))/i.test(lower)) return { name: "routine.today", raw: text, slots: {} };
+
   // "What matters?" — open loops that already exist; English and French phrasings.
   if (/^(what matters|what should i (do|focus on)|what.?s (open|waiting|next)|what remains open|qu.est-ce qui compte|qu.est-ce que je dois faire|quoi faire)\b/i.test(lower)) return { name: "today.loops", raw: text, slots: {} };
 

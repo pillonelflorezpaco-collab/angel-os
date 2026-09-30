@@ -14,6 +14,7 @@ import { formatContext } from "../context/format.js";
 import { orchestrate } from "../orchestration/orchestrator.js";
 import { interpretCapture, confirmLatestCapture, cancelLatestCapture, formatProposal, formatOutcomes, type ItemOutcome } from "../skills/system/capture.js";
 import { readOpenLoops, formatLoops } from "../skills/system/today.js";
+import { readTodayPlan, formatPlan } from "../skills/system/routines.js";
 import type { CaptureModelProvider } from "../capture/provider.js";
 import { NullModelProvider, type ModelProvider } from "../orchestration/types.js";
 import { toSafeError, logInternalError } from "./errors.js";
@@ -135,6 +136,12 @@ export class JarvisCore {
           message: `Today's calendar:\n${formatEventsAsContext(events, timeZone)}`,
           data: events,
         };
+      }
+
+      case "routine.today": {
+        if (!request.identity) return NO_IDENTITY;
+        const r = await readTodayPlan(request.identity, { agentKey: JARVIS_AGENT_KEY });
+        return r.status === "EXECUTED" ? { status: "EXECUTED", message: formatPlan(r.data as Parameters<typeof formatPlan>[0]), data: r.data } : r;
       }
 
       case "today.loops": {

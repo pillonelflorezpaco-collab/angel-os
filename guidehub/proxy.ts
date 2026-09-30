@@ -50,6 +50,9 @@ export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/today\/loops$/ },
   { method: "GET", path: /^\/api\/progress\/badges$/ },
   actions("system.memory", ["MEMORY_CONFIRM", "MEMORY_RETRACT"]),
+  // ── Routines: the owner's own plan; reads + four actions ──
+  { method: "GET", path: /^\/api\/routines(\/today)?$/ },
+  actions("system.routines", ["ROUTINE_CREATE", "ROUTINE_UPDATE", "ROUTINE_SET_STATUS", "ROUTINE_CHECK"]),
   // ── Capture: a sentence becomes a DRAFT; nothing is saved until confirm, and each confirmed item is an ordinary action ──
   { method: "POST", path: /^\/api\/capture$/ },
   { method: "POST", path: new RegExp(`^/api/capture/${UUID}/confirm$`) },

@@ -72,6 +72,9 @@ async function seedGrowth(stamp) {
   await act("system.memory/MEMORY_CREATE", { type: "EXPERIENCE", content: "MEMSEED I finished the cockpit screens today", source: "e2e" });
   await act("system.memory/MEMORY_CREATE", { type: "FACT", content: "MEMSEED temp wrong fact", source: "e2e" });
   await act("system.knowledge/KNOWLEDGE_ADD", { kind: "CONCEPT", title: "KNOWSEED Spaced repetition", body: "Reviewing at growing intervals improves retention." });
+  const ALLDAYS = [0, 1, 2, 3, 4, 5, 6];
+  await act("system.routines/ROUTINE_CREATE", { title: "E2E Midnight stretch", kind: "HABIT", details: "Five minutes of stretching", daysOfWeek: ALLDAYS, timeOfDay: "00:00" }); // always already past
+  await act("system.routines/ROUTINE_CREATE", { title: "E2E Evening snack", kind: "MEAL", details: "E2E yoghurt and fruit", daysOfWeek: ALLDAYS, timeOfDay: "23:59" }); // upcoming (unless run at 23:59)
   if (TOKEN_B) growth.foreign = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Someone else's experiment ${stamp}`, method: "private" }, TOKEN_B);
 }
 let crashPage = null; // for a screenshot if the run crashes
@@ -481,6 +484,7 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.waitForSelector("#badges section h2:has-text('On record')");
   const lt = await page.textContent("#loops");
   check("Today: 'What matters' lists real open items with the reason each is listed", lt.includes("Due now") && lt.includes(`Second look ${STAMP}`) && lt.includes("look-back date for this decision has passed") && lt.includes("Still open") && lt.includes("Angel OS as a daily system") && lt.includes("no open next action linked"));
+  check("Today: an unrecorded routine time is an open loop, with its reason", lt.includes("E2E Midnight stretch") && lt.includes("no check-in is recorded yet"));
   check("Today: open experiments and objectives appear as open loops; nothing is scored", lt.includes(`Morning study sticks better ${STAMP}`) && lt.includes("Nothing is scored or invented") && !/(\d\s?%|\bxp\b|\blevel\b|\bscore\b)/i.test(lt));
   const bt = await page.textContent("#badges");
   check("Today: badges are factual — each states its rule and count; earned ones say Earned; there is no percentage, level or XP", bt.includes("First decision on record") && bt.includes("Rule: 1 decision recorded") && bt.includes("Earned") && bt.includes("Not earned yet") && !/(\d\s?%|\bxp\b|\blevel\b|\bscore\b)/i.test(bt), bt.slice(0, 200));
@@ -489,8 +493,60 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await page.waitForSelector("p.pre:has-text('Due now')", { timeout: 8000 });
   check("Jarvis answers 'What matters today?' from the same open loops", (await page.textContent("p.pre")).includes(`Second look ${STAMP}`));
+  await page.waitForSelector("#loops section h2"); // the Today view re-renders after an answer; wait for it rather than race it
   check("Ask on Today leaves you on Today (a stale refresh from another screen must not swap the view)", (await page.locator("#loops section h2").count()) >= 1 && (await page.locator("h1:has-text('Learning')").count()) === 0);
   await page.screenshot({ path: `${SP}/23-today-loops.png`, fullPage: true });
+
+  // ── Routines ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  await page.getByRole("link", { name: "Routines", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Routines')");
+  await page.waitForSelector("[data-routine]");
+  const rt = page.locator("[data-routine]", { hasText: "E2E Midnight stretch" });
+  const rtText = await rt.textContent();
+  check("Routines: today's plan shows the owner's own routines with their details; a passed time reads 'Not recorded yet'", rtText.includes("00:00") && rtText.includes("Five minutes of stretching") && rtText.includes("Not recorded yet") && (await page.locator("[data-routine]", { hasText: "E2E Evening snack" }).textContent()).includes("Upcoming"));
+  check("Routines: no judging language and no score anywhere on the screen", !/(\bmissed\b|\bfailed\b|\blate\b|\boverdue\b|\bscore\b|\bstreak\b|\bxp\b|\d\s?%)/i.test(await page.textContent("main")));
+  await rt.getByRole("button", { name: /Mark done: E2E Midnight stretch/ }).click();
+  await page.waitForSelector("[data-routine][data-state=DONE]");
+  check("Routines: 'Done' records a check-in and the item offers no further Done/Skip", (await page.locator("[data-routine]", { hasText: "E2E Midnight stretch" }).textContent()).includes("Done") && (await page.locator("[data-routine]", { hasText: "E2E Midnight stretch" }).getByRole("button").count()) === 0);
+  await page.locator("[data-routine]", { hasText: "E2E Evening snack" }).getByRole("button", { name: /Skip: E2E Evening snack/ }).click();
+  await page.waitForSelector("[data-routine][data-state=SKIPPED]");
+  check("Routines: 'Skip today' is recorded as Skipped", true);
+  // create through the form
+  const addf = page.locator("form").filter({ has: page.getByRole("button", { name: "Add routine" }) });
+  await addf.getByRole("button", { name: "Add routine" }).click();
+  check("Routines: an empty form is refused with plain reasons", (await page.textContent("ul.errors")).includes("Give the routine a name.") && (await page.textContent("ul.errors")).includes("Pick at least one day."));
+  await addf.getByLabel("Name", { exact: true }).fill("E2E Dinner");
+  await addf.getByLabel("Kind").selectOption("MEAL");
+  await addf.getByLabel("Details (optional)").fill("E2E fish and vegetables");
+  for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) await addf.getByLabel(d, { exact: true }).check();
+  await addf.getByLabel("Time", { exact: true }).fill("19:00");
+  await addf.getByRole("button", { name: "Add routine" }).click();
+  await page.waitForSelector("[data-routine-row]:has-text('E2E Dinner')");
+  const row = page.locator("[data-routine-row]", { hasText: "E2E Dinner" });
+  check("Routines: the new routine appears with its days, time and details", (await row.textContent()).includes("Every day at 19:00") && (await row.textContent()).includes("E2E fish and vegetables"));
+  await row.getByRole("button", { name: "Pause" }).click();
+  await page.waitForSelector("[data-routine-row]:has-text('E2E Dinner') >> text=Paused");
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).getByRole("button", { name: "Resume" }).click();
+  await page.waitForSelector("[data-routine-row]:has-text('E2E Dinner') >> button:has-text('Pause')");
+  check("Routines: pause and resume work", true);
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).locator("summary", { hasText: "Edit" }).click();
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).getByLabel("Details (what to eat, what to do)").fill("E2E salmon and rice");
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).getByRole("button", { name: "Save changes" }).click();
+  await page.waitForSelector("[data-routine-row]:has-text('E2E salmon and rice')");
+  check("Routines: the owner can change the details; the new words replace the old", !(await page.textContent("main")).includes("E2E fish and vegetables"));
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).getByRole("button", { name: "Archive" }).click();
+  await page.locator("[data-routine-row]", { hasText: "E2E Dinner" }).getByRole("button", { name: "Archive it" }).click();
+  await page.waitForFunction(() => !document.body.innerText.includes("E2E salmon and rice"), null, { timeout: 8000 });
+  check("Routines: archiving is a two-step action and removes it from the plan", true);
+  await page.getByPlaceholder(/Ask Jarvis/).fill("What do I eat today?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.waitForSelector("p.pre:has-text('Your plan for')", { timeout: 8000 });
+  check("Jarvis shows the owner's own plan, and only that", (await page.textContent("p.pre")).includes("E2E yoghurt and fruit") && !/calor|diet|recommend/i.test(await page.textContent("p.pre")));
+  await page.screenshot({ path: `${SP}/25-routines.png`, fullPage: true });
+  probing = true;
+  const rprobe = (method, path, body) => page.evaluate(async ([m, p, b]) => (await fetch(p, { method: m, headers: { "X-Requested-With": "guidehub-cockpit", "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined })).status, [method, path, body]);
+  check("Routines security: no delete action, no write route, no per-routine read route from the cockpit", (await rprobe("POST", "/api/actions/system.routines/ROUTINE_DELETE", {})) === 404 && (await rprobe("POST", "/api/routines", {})) === 404 && (await rprobe("GET", "/api/routines/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e")) === 404);
+  await page.waitForTimeout(300); probing = false;
 
   // ── Capture: a sentence becomes a draft; nothing is saved until the owner confirms ──────────────────────────────────────────────
   const apiGet = (path) => page.evaluate(async (p) => (await (await fetch(p, { headers: { "X-Requested-With": "guidehub-cockpit" } })).json()), path);
@@ -567,7 +623,7 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("link", { name: "Capture", exact: true }).click(); await page.waitForSelector("h1:has-text('Capture')"); await page.waitForTimeout(300);
   check("Capture has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
   await page.screenshot({ path: `${SP}/21-capture-mobile.png`, fullPage: true });
-  for (const [nav, sel] of [["Memory", "h1:has-text('Memory & Knowledge')"], ["Today", "#loops section"]]) {
+  for (const [nav, sel] of [["Memory", "h1:has-text('Memory & Knowledge')"], ["Routines", "h1:has-text('Routines')"], ["Today", "#loops section"]]) {
     await page.getByRole("link", { name: nav, exact: true }).click(); await page.waitForSelector(sel); await page.waitForTimeout(400);
     check(`${nav} has no horizontal scroll at phone width`, !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
     await page.screenshot({ path: `${SP}/24-${nav.toLowerCase()}-mobile.png`, fullPage: true });

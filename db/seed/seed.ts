@@ -77,6 +77,12 @@ async function main() {
     create: { key: "system.capture", name: "System Capture", description: "Draft proposals from a sentence; nothing is saved until the owner confirms." },
   });
 
+  const routinesSkill = await db.skill.upsert({
+    where: { key: "system.routines" },
+    update: {},
+    create: { key: "system.routines", name: "System Routines", description: "The owner's own recurring plan (meals, habits, time blocks) and plain check-ins." },
+  });
+
   const todaySkill = await db.skill.upsert({
     where: { key: "system.today" },
     update: {},
@@ -196,6 +202,11 @@ async function main() {
     { resource: "angel:capture", action: "CAPTURE_INTERPRET", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
     { resource: "angel:capture", action: "CAPTURE_DECIDE", category: "READ", state: "ALLOWED", skillId: captureSkill.id },
     { resource: "angel:today", action: "TODAY_READ", category: "READ", state: "ALLOWED", skillId: todaySkill.id },
+    { resource: "angel:routines", action: "ROUTINE_READ", category: "READ", state: "ALLOWED", skillId: routinesSkill.id },
+    { resource: "angel:routines", action: "ROUTINE_CREATE", category: "WRITE", state: "ALLOWED", skillId: routinesSkill.id },
+    { resource: "angel:routines", action: "ROUTINE_UPDATE", category: "WRITE", state: "ALLOWED", skillId: routinesSkill.id },
+    { resource: "angel:routines", action: "ROUTINE_SET_STATUS", category: "WRITE", state: "ALLOWED", skillId: routinesSkill.id },
+    { resource: "angel:routines", action: "ROUTINE_CHECK", category: "WRITE", state: "ALLOWED", skillId: routinesSkill.id },
     { resource: "angel:today", action: "PROGRESS_READ", category: "READ", state: "ALLOWED", skillId: todaySkill.id },
     // system.decisions — same rationale, for "what did i decide about...".
     {
@@ -258,7 +269,7 @@ async function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, captureSkill, todaySkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
+    `Seeded principal ${principal.id}, agent ${agent.key}, skills: ${[tasksSkill, memorySkill, decisionsSkill, activitySkill, knowledgeSkill, lifeSkill, futureSkill, learningSkill, captureSkill, todaySkill, routinesSkill, calendarSkill, gmailSkill].map((s) => s.key).join(", ")}`
   );
 }
 
