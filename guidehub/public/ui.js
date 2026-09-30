@@ -23,6 +23,20 @@ export function h(tag, props = {}, ...children) {
   return el;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+/** SVG element helper, same rule as h(): text only ever becomes text (textContent), attributes are set as attributes — never markup, never a style attribute. */
+export function svg(tag, props = {}, ...children) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === "text") el.textContent = v;
+    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, String(v));
+  }
+  for (const c of children.flat()) if (c !== undefined && c !== null && c !== false) el.append(c);
+  return el;
+}
+
 export async function api(method, path, body) {
   const init = { method, headers: { ...CSRF, Accept: "application/json" }, credentials: "same-origin" };
   if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }

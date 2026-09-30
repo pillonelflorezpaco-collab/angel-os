@@ -42,3 +42,11 @@ export async function badgeReport(principalId: string, now: Date) {
   const { activityDays: _days, ...counts } = facts;
   return { badges, streak, counts, note: "Every badge is a threshold on a real count. There are no points, levels or hidden scores." };
 }
+
+/** Recorded activity for the calendar: only the owner's own events, only the window asked for. */
+export async function calendarEvents(principalId: string, now: Date, days: number) {
+  const since = new Date(now.getTime() - (days + 2) * 86_400_000);
+  const rows = await getDb().activity.findMany({ where: { principalId, occurredAt: { gte: since, lte: now } }, select: { occurredAt: true, type: true }, take: 20_000 });
+  const tz = (await getDb().principal.findUnique({ where: { id: principalId }, select: { timezone: true } }))?.timezone ?? "UTC";
+  return { events: rows.map((r) => ({ occurredAt: r.occurredAt, type: r.type as string })), timeZone: tz };
+}

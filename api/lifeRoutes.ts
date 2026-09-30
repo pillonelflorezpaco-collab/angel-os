@@ -7,7 +7,7 @@ import { readLifeOverview, readLifeHistory, readProject, readPeople, readResults
 import { readDecision, listDecisionRecords } from "../skills/system/decisions.js";
 import { readFutureOverview, readAspiration, readStateTimeline } from "../skills/system/future.js";
 import { readLearningOverview, readDueCards, readCard, readObjectives, readSessions, readExperiments, readExperiment } from "../skills/system/learning.js";
-import { readOpenLoops, readBadges } from "../skills/system/today.js";
+import { readOpenLoops, readBadges, readProgressOverview } from "../skills/system/today.js";
 import { readRoutines, readTodayPlan } from "../skills/system/routines.js";
 import { asyncRoute, identityOf } from "./middleware.js";
 
@@ -83,6 +83,7 @@ export function lifeRouter(): express.Router {
 
   // ── What matters + factual badges (read-only) ──────────────────────────
   r.get("/today/loops", asyncRoute(async (req, res) => respond(res, await readOpenLoops(identityOf(req)))));
+  r.get("/progress/overview", asyncRoute(async (req, res) => respond(res, await readProgressOverview(identityOf(req)))));
   r.get("/progress/badges", asyncRoute(async (req, res) => respond(res, await readBadges(identityOf(req)))));
 
   // ── Routines (reads; writes are actions on system.routines) ─────────────

@@ -48,7 +48,7 @@ export const ALLOWED: Rule[] = [
   actions("system.future", ["ASPIRATION_CREATE", "ASPIRATION_STATE_RECORD", "EVIDENCE_ATTACH"]),
   // ── Memory & Knowledge screen (search/browse are the existing read routes) + open loops and factual badges ──
   { method: "GET", path: /^\/api\/today\/loops$/ },
-  { method: "GET", path: /^\/api\/progress\/badges$/ },
+  { method: "GET", path: /^\/api\/progress\/(badges|overview)$/ },
   actions("system.memory", ["MEMORY_CONFIRM", "MEMORY_RETRACT"]),
   // ── Routines: the owner's own plan; reads + four actions ──
   { method: "GET", path: /^\/api\/routines(\/today)?$/ },

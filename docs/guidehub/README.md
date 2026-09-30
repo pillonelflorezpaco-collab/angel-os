@@ -64,7 +64,7 @@ State-changing requests need the `X-Requested-With: guidehub-cockpit` header and
 
 - `tests/guidehub-bff.test.ts` — config, hashing, sessions, throttle, cookie flags, CSRF/origin, the exact proxy allow-list (default deny), header hygiene.
 - `tests/guidehub-ui.test.ts` — the design's rules as pure functions (outcomes, "No evidence yet", allowed transitions, terminal states, form→body, routes) + static safety checks across every frontend module (text-only rendering, one fetch wrapper, every call is an allowed route).
-- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (130 checks, including the Capture, Memory, Routines and Today screens: sign-in, Today, the whole Life and Decisions journeys, Future Self and Learning views, cross-principal and allow-list probes, phone width, dark mode; screenshots). Optional `GUIDEHUB_E2E_API_TOKEN_B` (a second principal's token) enables the cross-principal checks. Header lists the environment variables.
+- `guidehub/e2e/smoke.cjs` — **opt-in** Chromium run against the real API + cockpit (142 checks, including the Capture, Memory, Routines, Progress and Today screens: sign-in, Today, the whole Life and Decisions journeys, Future Self and Learning views, cross-principal and allow-list probes, phone width, dark mode; screenshots). Optional `GUIDEHUB_E2E_API_TOKEN_B` (a second principal's token) enables the cross-principal checks. Header lists the environment variables.
 
 ## Known limits (step 1)
 

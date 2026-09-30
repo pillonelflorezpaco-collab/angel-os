@@ -87,3 +87,22 @@ h3 { font-size: .95rem; margin: 12px 0 4px; color: var(--muted); font-weight: 60
 .timeline li { border-left: 3px solid var(--line); padding-left: 0.75rem; }
 .timeline li.historical { opacity: 0.8; }
 @media (max-width: 600px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: 0.4rem; } }
+
+/* Progress pictures — one-hue ordinal ramp (blue; light: 250/350/450/600, dark: 600/500/400/250 — both validated against their surface), each step a real bucket of a real count. Colours live here as classes; nothing is inline. */
+.viz { --cell-0: #ebeae6; --cell-1: #86b6ef; --cell-2: #5598e7; --cell-3: #2a78d6; --cell-4: #184f95; --point: #2a78d6; --bar-done: #2a78d6; --bar-open: #86b6ef; --axis: #b9b8b2; }
+@media (prefers-color-scheme: dark) { .viz { --cell-0: #2a2a28; --cell-1: #184f95; --cell-2: #256abf; --cell-3: #3987e5; --cell-4: #86b6ef; --point: #3987e5; --bar-done: #3987e5; --bar-open: #184f95; --axis: #55544f; } }
+.viz .stack, .viz.stack { align-items: stretch; }
+.viz-svg { width: 100%; height: auto; display: block; }
+.calendar-svg { max-width: 480px; }
+.bar-svg { max-width: 360px; }
+.swatch { width: 14px; height: 14px; vertical-align: -2px; }
+.cell.level-0 { fill: var(--cell-0); } .cell.level-1 { fill: var(--cell-1); } .cell.level-2 { fill: var(--cell-2); } .cell.level-3 { fill: var(--cell-3); } .cell.level-4 { fill: var(--cell-4); }
+.cell:hover, .cell:focus, .point:hover, .point:focus { outline: none; stroke: var(--ink); stroke-width: 2; }
+.axis-text { fill: var(--muted); font-size: 7px; }
+.axis-line { stroke: var(--axis); stroke-width: 2; }
+.point-evidenced { fill: var(--point); stroke: var(--card); stroke-width: 2; } .point-initial { fill: var(--card); stroke: var(--point); stroke-width: 2; }
+.bar-done { fill: var(--bar-done); } .bar-open { fill: var(--bar-open); }
+.readout { min-height: 1.4em; font-weight: 600; }
+.legend { color: var(--muted); font-size: 0.9em; }
+.legend-item { display: inline-block; margin-right: 0.5rem; }
+.viz-table { border-collapse: collapse; width: 100%; } .viz-table th, .viz-table td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--line); }

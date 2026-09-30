@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, routineKindLabel, describeRoutineDays, routineStateLabel, canCheckRoutine, buildRoutineBody, memoryTypeLabel, memoryStatusLabel, provenanceLabel, canConfirmMemory, canRetractMemory, loopHref, badgeProgress, streakLine, MEMORY_FILTERS, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, captureTypeLabel, captureCanSave, captureStatusLabel, captureOutcomeLabel, buildCaptureConfirmBody, calendarReadout, calendarWeeks, monthLabels, calendarSummary, timelinePosition, stateReadout, projectLine, barSegments, routineKindLabel, describeRoutineDays, routineStateLabel, canCheckRoutine, buildRoutineBody, memoryTypeLabel, memoryStatusLabel, provenanceLabel, canConfirmMemory, canRetractMemory, loopHref, badgeProgress, streakLine, MEMORY_FILTERS, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -266,7 +266,7 @@ describe("Decision rules (step 3)", () => {
 });
 
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "memory.js", "routines.js", "today.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "capture.js", "memory.js", "progress.js", "routines.js", "today.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -337,7 +337,7 @@ describe("frontend safety (static checks)", () => {
     expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "memory.js", "routines.js", "styles.css", "today.js", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "capture.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "memory.js", "progress.js", "routines.js", "styles.css", "today.js", "ui.js"]);
   });
 });
 
@@ -534,5 +534,56 @@ describe("Routines screen", () => {
     expect(buildRoutineBody({ title: "x", timeOfDay: "07:00", durationMinutes: "abc" }, [1]).errors).toContain("The duration must be a whole number of minutes.");
     expect(JSON.stringify(buildRoutineBody({ title: "x", timeOfDay: "07:00", principalId: "evil" } as any, [1]).body)).not.toContain("evil");
     expect(routineKindLabel("WEIRD")).toBe("weird");
+  });
+});
+
+
+describe("Progress pictures (cockpit)", () => {
+  const pg = read("progress.js");
+  const ui = read("ui.js");
+  it("route #/progress only", () => {
+    expect(parseRoute("#/progress")).toEqual({ view: "progress" });
+    for (const bad of ["#/progress/", "#/Progress", "#/progress/x"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+  });
+  it("uses only the one read route the proxy allows; nothing is written from this screen", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    expect(matchRule("GET", "/api/progress/overview")).toBeDefined();
+    expect(pg.match(/api\("(GET|POST|DELETE)"/g)).toEqual(['api("GET"']);
+    expect(pg).not.toMatch(/\/api\/actions|principalId/);
+  });
+  it("SVG is built like everything else: text becomes text, attributes are attributes — no markup parsing, no inline style, colours come from CSS classes", () => {
+    expect(pg + ui).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|\.style\.|setAttribute\(\s*["']style|\bstyle:/);
+    expect(ui).toContain("createElementNS");
+    expect(pg).not.toMatch(/fill:|stroke:|#[0-9a-fA-F]{3,8}\b/); // no colour literals in code
+    const css = read("styles.css");
+    for (const cls of [".cell.level-0", ".cell.level-4", ".point-evidenced", ".point-initial", ".bar-done", ".bar-open"]) expect(css, cls).toContain(cls);
+    expect(css).toMatch(/prefers-color-scheme: dark\) \{ \.viz \{/); // the dark ramp is its own set of steps, not an automatic flip
+  });
+  it("wording states facts and never judges: zero is 'nothing recorded'; summary is a count, not a percentage; no score language", () => {
+    expect(calendarReadout({ day: "2026-10-05", total: 0, byType: {} })).toBe("Mon, Oct 5 — nothing recorded");
+    expect(calendarReadout({ day: "2026-10-06", total: 4, byType: { TASK_COMPLETED: 2, DECISION: 1, MEMORY_CREATED: 1 } })).toBe("Tue, Oct 6 — 4 recorded: 2 tasks completed, 1 decision, 1 memory created");
+    expect(calendarReadout({ day: "2026-10-06", total: 3, byType: { MEMORY_CREATED: 3 } })).toBe("Tue, Oct 6 — 3 recorded: 3 memories created");
+    expect(calendarSummary({ activeDays: 12, days: new Array(84), total: 37 })).toBe("12 of the last 84 days have something recorded (37 items in all).");
+    expect(calendarSummary({ activeDays: 0, days: new Array(84), total: 0 })).toBe("0 of the last 84 days have something recorded (0 items in all).");
+    expect(stateReadout({ at: "2026-09-30T00:00:00Z", basis: "INITIAL", evidenceCount: 0, contradicts: 0, current: "built" })).toMatch(/starting statement \(no evidence was required\): built/);
+    expect(stateReadout({ at: "2026-09-30T00:00:00Z", basis: "EVIDENCED", evidenceCount: 1, contradicts: 0, current: "x" })).toMatch(/updated state recorded with 1 piece of evidence: x/);
+    expect(stateReadout({ at: "2026-09-30T00:00:00Z", basis: "EVIDENCED", evidenceCount: 3, contradicts: 1, current: "x" })).toMatch(/3 pieces of evidence \(1 contradicting\)/);
+    expect(projectLine({ done: 3, open: 2 })).toBe("3 done · 2 open");
+    expect(projectLine({ done: 0, open: 0 })).toBe("No tasks yet");
+    expect(pg).not.toMatch(/\b(score|xp|level up|rank|percent)\b|%|Math\.round\(.*100/i);
+  });
+  it("layout helpers are geometry only: weeks start on Monday, a partial first week is padded, positions clamp to the axis, bars scale to the busiest project", () => {
+    const days = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"].map((day) => ({ day, weekday: new Date(`${day}T00:00:00Z`).getUTCDay(), total: 0, level: 0, byType: {} }));
+    const w = calendarWeeks(days);
+    expect(w).toHaveLength(2);
+    expect(w[0].map((d: any) => d?.day ?? null)).toEqual([null, null, null, "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]); // Thu Fri Sat Sun
+    expect(w[1][0].day).toBe("2026-10-05");
+    expect(monthLabels(w)).toEqual([{ col: 0, label: "Oct" }]);
+    expect(timelinePosition("2026-10-01T00:00:00Z", "2026-09-30T00:00:00Z", "2026-10-02T00:00:00Z")).toBe(0.5);
+    expect(timelinePosition("2026-09-01T00:00:00Z", "2026-09-30T00:00:00Z", "2026-10-02T00:00:00Z")).toBe(0);
+    expect(timelinePosition("2026-12-01T00:00:00Z", "2026-09-30T00:00:00Z", "2026-10-02T00:00:00Z")).toBe(1);
+    expect(timelinePosition("2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z")).toBe(0.5);
+    expect(barSegments({ done: 3, open: 1 }, 4, 200)).toEqual({ done: 150, open: 50 });
+    expect(barSegments({ done: 0, open: 0 }, 0, 200)).toEqual({ done: 0, open: 0 });
   });
 });

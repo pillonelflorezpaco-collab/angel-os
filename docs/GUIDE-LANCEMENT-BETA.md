@@ -107,6 +107,13 @@ Coche au fur et à mesure. Chaque ligne = quelque chose qui doit marcher.
 - [ ] Créer un objectif, puis un projet lié, puis une tâche dans ce projet.
 - [ ] Terminer la tâche ; elle apparaît comme faite.
 
+**Progress** (nouvel écran « Progress » — des images de ce qui a été *réellement enregistré*)
+- [ ] Le **calendrier d'activité** (12 semaines) : un carré par jour, teinte = tranche d'un vrai décompte (légende 0 / 1 / 2–3 / 4–6 / 7+). Survole ou sélectionne un jour : il dit ce qui a été enregistré, ou « nothing recorded » (un fait, pas un jugement).
+- [ ] La **frise du Futur Soi** : un point par état enregistré, à sa vraie date (creux = énoncé de départ, plein = mis à jour avec preuves). Rien n'est tracé entre les points.
+- [ ] La **carte objectifs → projets** : les vrais décomptes de tâches faites / ouvertes (jamais un pourcentage).
+- [ ] Chaque image a une version tableau (« Show as a table »). Lisible sur téléphone et en mode sombre.
+- [ ] Aucun score, niveau, XP ni projection nulle part.
+
 **Routines** (nouvel écran « Routines »)
 - [ ] Ajouter une routine (par ex. « Déjeuner », type Repas, tous les jours, 12:30, avec ce que TU veux manger dans les détails).
 - [ ] Le bloc « Today » la montre à la bonne heure, sur ton fuseau horaire : « À venir — dans X min » ou « Non enregistré » si l'heure est passée (jamais « raté »).

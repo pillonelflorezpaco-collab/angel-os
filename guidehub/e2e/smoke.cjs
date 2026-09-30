@@ -548,6 +548,33 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   check("Routines security: no delete action, no write route, no per-routine read route from the cockpit", (await rprobe("POST", "/api/actions/system.routines/ROUTINE_DELETE", {})) === 404 && (await rprobe("POST", "/api/routines", {})) === 404 && (await rprobe("GET", "/api/routines/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e")) === 404);
   await page.waitForTimeout(300); probing = false;
 
+  // ── Progress: three honest pictures of what was recorded ─────────────────────────────────────────────────────────────────────
+  await page.getByRole("link", { name: "Progress", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Progress')");
+  await page.waitForSelector("svg .cell");
+  check("Progress: the calendar draws one square per day for 12 weeks (84), each with its date", (await page.locator("rect.cell[data-day]").count()) === 84);
+  const activeCell = page.locator("rect.cell[data-day]:not(.level-0)").last();
+  await activeCell.focus();
+  const readoutA = await page.locator(".readout").first().textContent();
+  check("Progress: focusing a day states what was recorded, in words and counts", /— \d+ recorded: /.test(readoutA), readoutA);
+  await page.locator("rect.cell[data-day].level-0").first().focus();
+  check("Progress: an empty day says 'nothing recorded' — a fact, not a verdict", (await page.locator(".readout").first().textContent()).endsWith("— nothing recorded"));
+  const today = new Date().toISOString().slice(0, 10);
+  check("Progress: the most recent square is today and has something recorded (the seed just recorded things)", (await page.locator("rect.cell[data-day]").last().getAttribute("data-level")) !== "0");
+  check("Progress: the summary is a count, not a percentage", /\d+ of the last 84 days have something recorded \(\d+ items? in all\)\./.test(await page.textContent("main")));
+  await page.locator("summary", { hasText: "Show as a table" }).first().click();
+  check("Progress: every picture has a table alternative", (await page.locator("table.viz-table tbody tr").count()) >= 1);
+  const fut = page.locator(`[data-aspiration]`, { hasText: `Future ${STAMP}` });
+  await fut.waitFor();
+  check("Progress: the Future Self timeline shows the recorded states as dots (starting statement + evidenced update)", (await fut.locator("circle.point-initial").count()) === 1 && (await fut.locator("circle.point-evidenced").count()) >= 1);
+  await fut.locator("circle.point-evidenced").first().focus();
+  check("Progress: a dot reads out its state with its evidence count", /updated state recorded with 2 pieces of evidence/.test(await fut.locator(".readout").textContent()), await fut.locator(".readout").textContent());
+  const gtext = await page.textContent("main");
+  check("Progress: goals and projects show real task counts and no score", gtext.includes("Goals and projects") && !/(\d\s?%|\bxp\b|\bscore\b|\blevel up\b|\brank\b)/i.test(gtext));
+  const fills = await page.evaluate(() => Object.fromEntries([0, 1, 2, 3, 4].map((n) => { const el = document.querySelector(`svg .cell.level-${n}`) || document.querySelector(`.legend .cell.level-${n}`); return [n, el ? getComputedStyle(el).fill : null]; })));
+  check("Progress: the five shade levels are five different colours", new Set(Object.values(fills)).size === 5, JSON.stringify(fills));
+  await page.screenshot({ path: `${SP}/26-progress.png`, fullPage: true });
+
   // ── Capture: a sentence becomes a draft; nothing is saved until the owner confirms ──────────────────────────────────────────────
   const apiGet = (path) => page.evaluate(async (p) => (await (await fetch(p, { headers: { "X-Requested-With": "guidehub-cockpit" } })).json()), path);
   await page.getByRole("link", { name: "Capture", exact: true }).click();
@@ -623,9 +650,10 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("link", { name: "Capture", exact: true }).click(); await page.waitForSelector("h1:has-text('Capture')"); await page.waitForTimeout(300);
   check("Capture has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
   await page.screenshot({ path: `${SP}/21-capture-mobile.png`, fullPage: true });
-  for (const [nav, sel] of [["Memory", "h1:has-text('Memory & Knowledge')"], ["Routines", "h1:has-text('Routines')"], ["Today", "#loops section"]]) {
+  for (const [nav, sel] of [["Progress", "h1:has-text('Progress')"], ["Memory", "h1:has-text('Memory & Knowledge')"], ["Routines", "h1:has-text('Routines')"], ["Today", "#loops section"]]) {
     await page.getByRole("link", { name: nav, exact: true }).click(); await page.waitForSelector(sel); await page.waitForTimeout(400);
-    check(`${nav} has no horizontal scroll at phone width`, !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
+    const wideEls = await page.evaluate(() => { const vw = document.documentElement.clientWidth; return document.documentElement.scrollWidth > vw + 1 ? [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > vw + 1).slice(0, 4).map((e) => `${e.tagName}:${(e.textContent || "").slice(0, 30)}:${Math.round(e.getBoundingClientRect().right)}`) : []; });
+    check(`${nav} has no horizontal scroll at phone width`, wideEls.length === 0, wideEls.join(" | "));
     await page.screenshot({ path: `${SP}/24-${nav.toLowerCase()}-mobile.png`, fullPage: true });
   }
   await page.getByRole("link", { name: "Today", exact: true }).click(); await page.waitForSelector("#briefing h1");
@@ -650,6 +678,10 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await p2.screenshot({ path: `${SP}/19-learning-dark.png` });
   check("dark mode: Future Self and Learning render on a dark background", /rgb\((\d+), (\d+), (\d+)\)/.test(bgDark) && Number(/rgb\((\d+)/.exec(bgDark)[1]) < 60, bgDark);
 
+  await p2.goto(`${URL_}/#/progress`); await p2.reload(); await p2.waitForSelector("svg .cell"); await p2.waitForTimeout(300);
+  const darkFills = await p2.evaluate(() => Object.fromEntries([0, 4].map((n) => [n, getComputedStyle(document.querySelector(`svg .cell.level-${n}`)).fill])));
+  await p2.screenshot({ path: `${SP}/27-progress-dark.png`, fullPage: true });
+  check("Progress in dark mode uses its own dark ramp (empty square dark, strongest square light)", darkFills[0] === "rgb(42, 42, 40)" && darkFills[4] === "rgb(134, 182, 239)", JSON.stringify(darkFills));
   check("no console errors / CSP violations", problems.length === 0, problems.join(" | "));
   await browser.close();
   const failed = results.filter((r) => !r.ok);

@@ -183,7 +183,7 @@ export function linkablePeople(all, linked) {
   return (all ?? []).filter((p) => !taken.has(p.id));
 }
 
-/** Hash routes: #/routines, #/memory, #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
+/** Hash routes: #/progress, #/routines, #/memory, #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
 export function parseRoute(hash) {
   const h = String(hash ?? "").replace(/^#\/?/, "");
   if (h === "" || h === "today") return { view: "today" };
@@ -193,6 +193,7 @@ export function parseRoute(hash) {
   if (h === "capture") return { view: "capture" };
   if (h === "memory") return { view: "memory" };
   if (h === "routines") return { view: "routines" };
+  if (h === "progress") return { view: "progress" };
   if (h === "future-self") return { view: "future" };
   if (h === "learning") return { view: "learning" };
   if (h === "decisions") return { view: "decisions" };
@@ -453,4 +454,54 @@ export function buildRoutineBody(values, days) {
   const dur = String(values.durationMinutes ?? "").trim();
   if (dur) { const n = Number(dur); if (!Number.isInteger(n)) errors.push("The duration must be a whole number of minutes."); else body.durationMinutes = n; }
   return { body, errors };
+}
+
+// ── Progress pictures: layout and words only; every number comes from the server ─────────────────────
+const ACTIVITY_WORDS = { TASK_COMPLETED: ["task completed", "tasks completed"], QUEST_COMPLETED: ["quest completed", "quests completed"], LEARNING_SESSION: ["study session", "study sessions"], KNOWLEDGE_ADDED: ["knowledge item added", "knowledge items added"], HABIT_COMPLETED: ["routine check-in", "routine check-ins"], GOAL_PROGRESS: ["progress reading", "progress readings"], ACHIEVEMENT: ["achievement", "achievements"], MEETING: ["meeting", "meetings"], DECISION: ["decision", "decisions"], MEMORY_CREATED: ["memory created", "memories created"], REMINDER_DELIVERED: ["reminder delivered", "reminders delivered"] };
+const activityWords = (t, n) => { const w = ACTIVITY_WORDS[t]; const fallback = String(t).toLowerCase().replace(/_/g, " "); return `${n} ${w ? (n === 1 ? w[0] : w[1]) : fallback}`; };
+const ymd = (day) => new Date(`${day}T00:00:00Z`);
+const dayLabel = (day) => ymd(day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+
+/** What one calendar cell says. Zero is "nothing recorded" — a statement of fact, not a verdict. */
+export function calendarReadout(d) {
+  if (!d || !d.total) return `${d ? dayLabel(d.day) : "That day"} — nothing recorded`;
+  const parts = Object.entries(d.byType).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t, n]) => activityWords(t, n));
+  return `${dayLabel(d.day)} — ${d.total} recorded: ${parts.join(", ")}`;
+}
+
+/** Days → week columns (Monday first). A week's slots are days or null (before the first recorded day). */
+export function calendarWeeks(days) {
+  const weeks = [];
+  for (const d of days) {
+    const row = (d.weekday + 6) % 7; // Mon = 0 … Sun = 6
+    if (!weeks.length || row === 0) weeks.push(Array(7).fill(null));
+    weeks[weeks.length - 1][row] = d;
+  }
+  return weeks;
+}
+/** A month name above the first column in which a month starts. */
+export function monthLabels(weeks) {
+  const out = []; let last = "";
+  weeks.forEach((w, i) => { const first = w.find(Boolean); if (!first) return; const m = ymd(first.day).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }); if (m !== last) { out.push({ col: i, label: m }); last = m; } });
+  return out;
+}
+export const calendarSummary = (c) => `${c.activeDays} of the last ${c.days.length} days have something recorded (${c.total} item${c.total === 1 ? "" : "s"} in all).`;
+
+/** 0…1 along the shared time axis. Only geometry. */
+export function timelinePosition(at, from, to) {
+  const a = Date.parse(at), f = Date.parse(from), t = Date.parse(to);
+  if (!(t > f)) return 0.5;
+  return Math.min(1, Math.max(0, (a - f) / (t - f)));
+}
+export function stateReadout(p) {
+  const when = formatDateOnly(p.at);
+  if (p.basis === "INITIAL") return `${when} — starting statement (no evidence was required): ${p.current}`;
+  const ev = p.evidenceCount === 1 ? "1 piece of evidence" : `${p.evidenceCount} pieces of evidence`;
+  return `${when} — updated state recorded with ${ev}${p.contradicts ? ` (${p.contradicts} contradicting)` : ""}: ${p.current}`;
+}
+export const projectLine = (p) => (p.done + p.open === 0 ? "No tasks yet" : `${p.done} done · ${p.open} open`);
+/** Bar geometry from counts: segment widths in drawing units, scaled to the busiest project. Not a percentage of anything. */
+export function barSegments(p, maxTotal, width) {
+  if (!maxTotal) return { done: 0, open: 0 };
+  return { done: Math.round((p.done / maxTotal) * width), open: Math.round((p.open / maxTotal) * width) };
 }
