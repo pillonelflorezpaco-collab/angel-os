@@ -33,7 +33,7 @@ export function approvalOutcome(httpStatus, body, decision) {
 
 /** null means NO EVIDENCE — never zero, never an empty bar. */
 export function progressLabel(progress) {
-  if (progress === null || progress === undefined) return "No evidence yet";
+  if (progress === null || progress === undefined) return "No measured readings yet";
   const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
   return pct >= 100 ? "Target reached by recorded readings — you decide when it's achieved" : `${pct}% by recorded readings`;
 }

@@ -33,7 +33,7 @@ export function formatContext(ctx: ContextPackage): string {
   }
   if (ctx.activeAspirations?.length) {
     lines.push("Aspirations:");
-    for (const a of ctx.activeAspirations) lines.push(`• ${a.title}: ${a.current} → ${a.desired} (${a.progress === null ? "no evidence yet" : `${Math.round(a.progress * 100)}% by recorded readings`})`);
+    for (const a of ctx.activeAspirations) lines.push(`• ${a.title}: ${a.current} → ${a.desired} (${a.progress === null ? "no measured readings yet" : `${Math.round(a.progress * 100)}% by recorded readings`})`);
   }
   if (ctx.activeLearning?.length) {
     lines.push("Learning:");

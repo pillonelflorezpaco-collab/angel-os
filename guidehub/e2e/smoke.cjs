@@ -114,7 +114,7 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   const html = await page.content();
   check("hostile task title is shown as TEXT (no element injected)", (await page.locator("#briefing img").count()) === 0 && (await page.textContent("#briefing")).includes("<img src=x onerror=alert(1)> hostile task title"));
   check("no alert/dialog fired", dialogs === 0);
-  check("aspiration with no readings says 'No evidence yet' (not 0%)", (await page.textContent("#briefing")).includes("No evidence yet") && !(await page.textContent("#briefing")).includes("0% by recorded"));
+  check("aspiration with no readings says 'No measured readings yet' (not 0%)", (await page.textContent("#briefing")).includes("No measured readings yet") && !(await page.textContent("#briefing")).includes("0% by recorded"));
 
   const text = await page.evaluate(() => document.body.innerText);
   check("no stray null/undefined/[object Object] text on the page", !/(^|\n)\s*(null|undefined)\s*(\n|$)|\[object Object\]/.test(text));

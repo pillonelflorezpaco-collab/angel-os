@@ -224,7 +224,7 @@ describe("Future Self: aspirations, metrics, evidence-based progress", () => {
       const engine = new DeterministicContextEngine();
       const ctx = await engine.buildContext({ identity: identityFor(c), agentKey: JARVIS_AGENT_KEY, query: "zvxq" });
       expect(ctx.activeAspirations).toEqual([expect.objectContaining({ title: "zvxq aspiration", progress: null })]);
-      expect(formatContext(ctx)).toContain("no evidence yet");
+      expect(formatContext(ctx)).toContain("no measured readings yet");
       expect(ctx.withheld).not.toContain("future");
       const none = await engine.buildContext({ identity: identityFor(a), agentKey: JARVIS_AGENT_KEY, query: "zvxq" });
       expect(JSON.stringify(none.activeAspirations)).not.toContain("someone else");

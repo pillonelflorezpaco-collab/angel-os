@@ -7,7 +7,7 @@ rules a UI must follow so it cannot undermine the guarantees the backend enforce
 
 1. **The token is the identity.** The UI never sends or displays a principal id; every request rides on the bearer token. There is no "switch user" and no admin view.
 2. **Show what the system knows, honestly.** Derived values keep their meaning on screen:
-   - progress `null` → "No evidence yet" (never 0%, never an empty bar); a target reached is "Target reached" — the **owner** presses "Mark achieved".
+   - progress `null` → "No measured readings yet" (never 0%, never an empty bar); a target reached is "Target reached" — the **owner** presses "Mark achieved".
    - learning minutes are labelled *self-reported*; "due" cards are a plain count; there are no streaks, XP, levels, badges or leaderboards anywhere.
    - a memory that is an INFERENCE is shown as a guess ("Jarvis thinks…") with a *Confirm* action; a FACT is never visually merged with it.
 3. **Nothing happens silently.** Every write shows one of four honest outcomes (§4). Approvals are a first-class, always-reachable surface.

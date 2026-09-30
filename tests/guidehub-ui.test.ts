@@ -37,9 +37,9 @@ describe("cockpit rules (docs/guidehub/cockpit-design.md)", () => {
     expect(approvalOutcome(500, null, "approve")).toMatchObject({ done: false });
   });
 
-  it("§1.2: null progress reads 'No evidence yet' — never 0%, never a bar; reaching the target leaves the decision to the owner", () => {
-    expect(progressLabel(null)).toBe("No evidence yet");
-    expect(progressLabel(undefined)).toBe("No evidence yet");
+  it("§1.2: null progress reads 'No measured readings yet' — never 0%, never a bar; reaching the target leaves the decision to the owner", () => {
+    expect(progressLabel(null)).toBe("No measured readings yet");
+    expect(progressLabel(undefined)).toBe("No measured readings yet");
     expect(progressLabel(0)).toBe("0% by recorded readings"); // a real reading at the baseline is not "no evidence"
     expect(progressLabel(0.5)).toBe("50% by recorded readings");
     expect(progressLabel(0.256)).toBe("26% by recorded readings");
