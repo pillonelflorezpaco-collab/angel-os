@@ -6,7 +6,7 @@ import { isKnownAction, listActionCatalog, proposeNamedAction } from "../skills/
 import { readLifeOverview, readLifeHistory, readProject, readPeople, readResults, readReviews } from "../skills/system/life.js";
 import { readDecision, listDecisionRecords } from "../skills/system/decisions.js";
 import { readFutureOverview, readAspiration, readStateTimeline } from "../skills/system/future.js";
-import { readLearningOverview, readDueCards, readCard, readObjectives, readExperiments, readExperiment } from "../skills/system/learning.js";
+import { readLearningOverview, readDueCards, readCard, readObjectives, readSessions, readExperiments, readExperiment } from "../skills/system/learning.js";
 import { asyncRoute, identityOf } from "./middleware.js";
 
 // GuideHub-ready surface for the Life OS domains (BUILD #18). Still an ADAPTER: identity comes from the
@@ -98,6 +98,7 @@ export function lifeRouter(): express.Router {
     if (!q.success) return res.status(400).json({ error: q.error.flatten() });
     respond(res, await readDueCards(identityOf(req), { agentKey, ...q.data }));
   }));
+  r.get("/learning/sessions", asyncRoute(async (req, res) => respond(res, await readSessions(identityOf(req), { agentKey }))));
   r.get("/learning/objectives", asyncRoute(async (req, res) => respond(res, await readObjectives(identityOf(req), { agentKey }))));
   r.get("/learning/experiments", asyncRoute(async (req, res) => respond(res, await readExperiments(identityOf(req), { agentKey }))));
   r.get("/learning/experiments/:id", asyncRoute(async (req, res) => {

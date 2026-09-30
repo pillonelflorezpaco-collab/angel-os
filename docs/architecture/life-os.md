@@ -145,3 +145,7 @@ CURRENT STATE → DESIRED STATE → GAP → EVIDENCE → NEXT ACTION → RESULT 
 - **Lesson** — a `LESSON` memory (provenance EXPERIENCED) with `sourceRef = experiment:<id>`, requiring ≥1 observation. It references the experiment and never rewrites it.
 
 All writes remain ActionDefinitions (`ASPIRATION_STATE_RECORD`, `EVIDENCE_ATTACH`, `OBJECTIVE_CREATE/CLOSE`, `EXPERIMENT_CREATE/OBSERVE/TRANSITION`, `LESSON_RECORD`) under the existing permission/interface/approval/audit path. Read routes: `GET /future/aspirations/:id/states`, `/learning/objectives`, `/learning/experiments[/:id]`.
+
+### Cockpit screens (Step 5)
+
+`#/future-self` and `#/learning` are views over the routes above; they hold no rules. Evidence labels are resolved server-side from the owner's own rows (`listEvidence`), so a client can never supply a label, and a memory shows its type (only EXPERIENCE/LESSON are lived evidence). The proxy allow-list gained exactly: `GET /api/future/aspirations`, `.../:id/states`, `GET /api/learning/(topics|sessions|objectives|experiments)`, `.../experiments/:id`, and the actions `ASPIRATION_CREATE`, `ASPIRATION_STATE_RECORD`, `EVIDENCE_ATTACH`, `OBJECTIVE_CREATE/CLOSE`, `EXPERIMENT_CREATE/OBSERVE/TRANSITION`, `LESSON_RECORD`. New read additions: `GET /api/learning/sessions`, lessons and server-labelled evidence in experiment/state reads, next task/quest on aspirations.

@@ -152,3 +152,4 @@ export const readCard = (identity: IdentityContext, input: { agentKey: string; c
 export const readObjectives = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "objectives" }, exp.listObjectives);
 export const readExperiments = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "experiments" }, exp.listExperiments);
 export const readExperiment = (identity: IdentityContext, input: { agentKey: string; experimentId: string }) => read(identity, input.agentKey, { op: "experiment", experimentId: input.experimentId }, (pid) => exp.getExperiment(pid, input.experimentId));
+export const readSessions = (identity: IdentityContext, input: { agentKey: string }) => read(identity, input.agentKey, { op: "sessions" }, (pid) => learning.listSessions(pid));

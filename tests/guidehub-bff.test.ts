@@ -234,7 +234,7 @@ describe("guidehub server (BFF)", () => {
       const { app } = build();
       const c = await login(app);
       const blocked: [string, string][] = [
-        ["get", "/api/audit"], ["get", "/api/actions"], ["get", "/api/connections"], ["get", "/api/reviews"], ["get", "/api/future/aspirations"], ["get", "/api/knowledge/sources"], ["get", "/api/knowledge/items/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["get", "/api/memory/other"], ["get", "/api/activity"],
+        ["get", "/api/audit"], ["get", "/api/actions"], ["get", "/api/connections"], ["get", "/api/reviews"], ["get", "/api/future/aspirations/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["get", "/api/future"], ["get", "/api/learning/cards/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["get", "/api/learning"], ["post", "/api/learning/experiments"], ["post", "/api/actions/system.future/ASPIRATION_UPDATE"], ["post", "/api/actions/system.learning/SESSION_LOG"], ["get", "/api/knowledge/sources"], ["get", "/api/knowledge/items/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["get", "/api/memory/other"], ["get", "/api/activity"],
         ["post", "/api/knowledge/ingest"], ["post", "/api/reminders"],
         ["post", "/api/actions/system.memory/MEMORY_DELETE"], ["post", "/api/actions/system.life/REVIEW_CREATE"], ["post", "/api/actions/system.decisions/DECISION_UPDATE"], ["post", "/api/actions/system.decisions/DECISION_RECORD2"], ["post", "/api/memory/search"], ["post", "/api/results"], ["post", "/api/tasks"], ["get", "/api/decisions/not-a-uuid"], ["get", "/api/results/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["get", "/api/tasks/0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e"], ["post", "/api/actions/system.life/VISION_UPDATE"], ["post", "/api/actions/system.life/QUEST_UPDATE"],
         ["post", "/api/actions/system.life/PROJECT_LINK_KNOWLEDGE"], ["post", "/api/actions/system.tasks/TASK_UPDATE"], ["post", "/api/actions/system.tasks/CREATE_REMINDER"], ["post", "/api/actions/system.future/ASPIRATION_ACHIEVE"], ["post", "/api/actions/system.learning/TOPIC_CREATE"], ["post", "/api/actions/system.knowledge/KNOWLEDGE_DELETE_SOURCE"],
@@ -261,8 +261,11 @@ describe("guidehub server (BFF)", () => {
         ...["CREATE_TASK", "TASK_COMPLETE", "TASK_CANCEL"].map((a) => ["POST", `/api/actions/system.tasks/${a}`] as [string, string]),
       ];
       allowed.push(["GET", `/api/decisions/${UUID}`], ["GET", "/api/results"], ["GET", "/api/memory/search"], ["GET", "/api/knowledge/search"], ["GET", "/api/tasks"], ["POST", "/api/actions/system.decisions/DECISION_RECORD"], ["POST", "/api/actions/system.life/RESULT_RECORD"]);
+      allowed.push(["GET", "/api/future/aspirations"], ["GET", `/api/future/aspirations/${UUID}/states`], ["GET", "/api/learning/topics"], ["GET", "/api/learning/sessions"], ["GET", "/api/learning/objectives"], ["GET", "/api/learning/experiments"], ["GET", `/api/learning/experiments/${UUID}`],
+        ...["ASPIRATION_CREATE", "ASPIRATION_STATE_RECORD", "EVIDENCE_ATTACH"].map((a) => ["POST", `/api/actions/system.future/${a}`] as [string, string]),
+        ...["OBJECTIVE_CREATE", "OBJECTIVE_CLOSE", "EXPERIMENT_CREATE", "EXPERIMENT_OBSERVE", "EXPERIMENT_TRANSITION", "LESSON_RECORD"].map((a) => ["POST", `/api/actions/system.learning/${a}`] as [string, string]));
       for (const [m, p] of allowed) expect(matchRule(m, p), `${m} ${p}`).toBeDefined();
-      expect(ALLOWED).toHaveLength(19); // a new rule entry must come with a new line in this test
+      expect(ALLOWED).toHaveLength(25); // a new rule entry must come with a new line in this test
     });
 
     it("approve/deny take NO parameters: a body with anything is refused before it reaches the API; the API always receives {}", async () => {

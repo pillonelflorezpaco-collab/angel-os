@@ -35,3 +35,15 @@ export function resultLine(r: { statement: string; value?: number | null; unit?:
 export function pickerRow(kind: string, hit: any): { refId: string; title: string; sub: string };
 export function withSuperseded(list: any[] | undefined): any[];
 export function buildResultBody(values: Record<string, any>, subjectId: string): { body: Record<string, unknown>; errors: string[] };
+export const HYPOTHESIS_LABELS: Record<string, string>;
+export function hypothesisLabel(s: string): string;
+export const HYPOTHESIS_ORDER: string[];
+export function isClosedExperiment(s: string): boolean;
+export const STANCES: { value: string; label: string }[];
+export function stanceLabel(s: string): string;
+export function evidenceKindLabel(link: any): string;
+export function evidenceText(link: any): string;
+export function evidenceGroups(links: any[]): { value: string; label: string; items: any[] }[];
+export function stateHeading(state: any, index: number, total: number): string;
+export function metricReadingLine(m: any): string;
+export function buildStateBody(aspirationId: string, values: Record<string, string>, evidence: { sourceKind: string; sourceId: string; stance: string }[]): { body: any; errors: string[] };

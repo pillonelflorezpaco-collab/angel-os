@@ -183,13 +183,15 @@ export function linkablePeople(all, linked) {
   return (all ?? []).filter((p) => !taken.has(p.id));
 }
 
-/** Hash routes: #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
+/** Hash routes: #/future-self, #/learning, #/today, #/life, #/life/projects/<uuid>, #/decisions, #/decisions/<uuid>. Anything else falls back to Today. */
 export function parseRoute(hash) {
   const h = String(hash ?? "").replace(/^#\/?/, "");
   if (h === "" || h === "today") return { view: "today" };
   if (h === "life") return { view: "life" };
   const m = /^life\/projects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
   if (m) return { view: "project", id: m[1] };
+  if (h === "future-self") return { view: "future" };
+  if (h === "learning") return { view: "learning" };
   if (h === "decisions") return { view: "decisions" };
   const d = /^decisions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(h);
   if (d) return { view: "decision", id: d[1] };
@@ -294,4 +296,65 @@ export function buildResultBody(values, subjectId) {
   }
   if (hasValue !== Boolean(body.unit)) errors.push("A measurement needs both a value and a unit.");
   return { body: { subjectKind: "DECISION", subjectId, ...body }, errors };
+}
+
+// ── Step 5: Future Self + Learning ─────────────────────────────────────────
+// Wording only. Every rule about states, evidence and hypotheses lives on the server; the server's refusal is shown as-is.
+
+export const HYPOTHESIS_LABELS = {
+  CANDIDATE: "Candidate — proposed, nothing observed yet",
+  OBSERVED: "Observed — something was seen",
+  SUPPORTED: "Supported — evidence points this way",
+  CONFIRMED: "Confirmed — held up in this experiment",
+  REJECTED: "Rejected — did not hold up",
+};
+export const hypothesisLabel = (s) => HYPOTHESIS_LABELS[s] ?? String(s).toLowerCase();
+export const HYPOTHESIS_ORDER = ["CANDIDATE", "OBSERVED", "SUPPORTED", "CONFIRMED", "REJECTED"];
+/** A closed record has no controls; everything else is the server's call. */
+export const isClosedExperiment = (s) => s === "CONFIRMED" || s === "REJECTED";
+
+export const STANCES = [{ value: "SUPPORTS", label: "Supporting evidence" }, { value: "CONTRADICTS", label: "Contradicting evidence" }, { value: "CONTEXT", label: "Context only" }];
+export const stanceLabel = (s) => STANCES.find((x) => x.value === s)?.label ?? String(s).toLowerCase();
+
+/** What kind of evidence this is, from what the SERVER says the source is. Only lived records are "lived evidence". */
+export function evidenceKindLabel(link) {
+  if (link.sourceKind === "MEMORY") {
+    if (link.memoryType === "EXPERIENCE") return "Lived experience";
+    if (link.memoryType === "LESSON") return "Lesson";
+    return `Memory (${String(link.memoryType ?? "unknown").toLowerCase()}) — not lived evidence`;
+  }
+  return { RESULT: "Result", DECISION: "Decision", TASK: "Task", QUEST: "Quest", LEARNING_SESSION: "Study session", METRIC_READING: "Metric reading", OBSERVATION: "Observation" }[link.sourceKind] ?? String(link.sourceKind).toLowerCase();
+}
+
+/** Text for one evidence link. A source that can no longer be read is said so, never guessed at. */
+export function evidenceText(link) {
+  if (link.retracted) return "This source was retracted later.";
+  return link.label ?? "This source is no longer available.";
+}
+
+export function evidenceGroups(links) {
+  const list = Array.isArray(links) ? links : [];
+  return STANCES.map((s) => ({ ...s, items: list.filter((l) => l.stance === s.value) }));
+}
+
+/** "Recorded on" for states, so history reads as history and not as current truth. */
+export function stateHeading(state, index, total) {
+  const when = formatDateOnly(state.createdAt);
+  const kind = state.basis === "INITIAL" ? "Starting state recorded" : "Updated state recorded";
+  return `${kind} on ${when}${index === total - 1 ? " — latest" : " — earlier"}`;
+}
+
+export function metricReadingLine(m) {
+  if (m.latest === null || m.latest === undefined) return "No readings recorded yet.";
+  return `Latest recorded reading: ${m.latest} ${m.unit}${m.lastObservedAt ? ` on ${formatDateOnly(m.lastObservedAt)}` : ""}.`;
+}
+
+/** Body for ASPIRATION_STATE_RECORD. Empty optional fields are left out; the evidence items carry ids the server looked up, never labels. */
+export function buildStateBody(aspirationId, values, evidence) {
+  const { body } = buildBody({ current: values.current, gap: values.gap, desired: values.desired, note: values.note });
+  const errors = [];
+  if (!body.current) errors.push("Describe the current state in your words.");
+  if (!body.desired) errors.push("Describe the desired state.");
+  if (!evidence.length) errors.push("Add at least one piece of evidence.");
+  return { body: { aspirationId, ...body, evidence: evidence.map(({ sourceKind, sourceId, stance }) => ({ sourceKind, sourceId, stance })) }, errors };
 }

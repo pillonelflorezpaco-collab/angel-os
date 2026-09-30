@@ -86,7 +86,9 @@ export async function getExperiment(principalId: string, id: string) {
   const e = await db.learningExperiment.findFirst({ where: { id, principalId }, include: { observations: { orderBy: { observedAt: "asc" }, take: 200 }, changes: { orderBy: { createdAt: "asc" }, take: 50 } } });
   if (!e) throw new LifeNotFoundError("experiment");
   const evidence = await listEvidence(principalId, "EXPERIMENT", id);
-  return { ...e, evidence, evidenceSummary: summarizeEvidence(evidence) };
+  // Lessons reference the experiment (sourceRef); they are memories of their own and are only read here.
+  const lessons = await db.memory.findMany({ where: { principalId, type: "LESSON", sourceRef: `experiment:${id}`, status: { not: "RETRACTED" } }, orderBy: { createdAt: "asc" }, take: 50, select: { id: true, content: true, createdAt: true, provenance: true } });
+  return { ...e, evidence, evidenceSummary: summarizeEvidence(evidence), lessons };
 }
 
 export const listExperiments = (principalId: string) => getDb().learningExperiment.findMany({ where: { principalId }, orderBy: { createdAt: "desc" }, take: 100 });

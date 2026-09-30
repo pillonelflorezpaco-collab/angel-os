@@ -9,7 +9,7 @@ const actions = (skill: string, names: string[]): Rule => ({ method: "POST", pat
 
 /**
  * Grown one screen at a time, each entry with a test. Step 1: Today briefing, Ask Jarvis, approvals, three inline actions.
- * Step 2: Life (visions, goals, projects, quests, tasks, people). Step 3: Decisions (+ results, and read-only pickers for evidence).
+ * Step 2: Life (visions, goals, projects, quests, tasks, people). Step 3: Decisions (+ results, and read-only pickers for evidence). Step 5: Future Self + Learning.
  * Anything not listed — reminders, memory/knowledge writes, audit, reviews, the other domains — is unreachable from the cockpit until its screen ships.
  */
 export const ALLOWED: Rule[] = [
@@ -40,6 +40,13 @@ export const ALLOWED: Rule[] = [
   { method: "GET", path: /^\/api\/(memory|knowledge)\/search$/ },
   { method: "GET", path: /^\/api\/tasks$/ },
   actions("system.life", ["RESULT_RECORD"]),
+  // ── Step 5: Future Self + Learning (read views, then the ordinary actions behind their forms) ──
+  { method: "GET", path: /^\/api\/future\/aspirations$/ },
+  { method: "GET", path: new RegExp(`^/api/future/aspirations/${UUID}/states$`) },
+  { method: "GET", path: /^\/api\/learning\/(topics|sessions|objectives|experiments)$/ },
+  { method: "GET", path: new RegExp(`^/api/learning/experiments/${UUID}$`) },
+  actions("system.future", ["ASPIRATION_CREATE", "ASPIRATION_STATE_RECORD", "EVIDENCE_ATTACH"]),
+  actions("system.learning", ["OBJECTIVE_CREATE", "OBJECTIVE_CLOSE", "EXPERIMENT_CREATE", "EXPERIMENT_OBSERVE", "EXPERIMENT_TRANSITION", "LESSON_RECORD"]),
 ];
 
 export function matchRule(method: string, path: string): Rule | undefined {

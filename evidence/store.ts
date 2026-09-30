@@ -49,8 +49,44 @@ export async function attachEvidenceTx(tx: Tx, principalId: string, d: EvidenceI
 
 export const attachEvidence = (principalId: string, d: EvidenceInput) => getDb().$transaction((tx) => attachEvidenceTx(tx, principalId, d));
 
+const clip = (t: string, n = 200) => (t.length > n ? `${t.slice(0, n)}…` : t);
+
+/**
+ * Evidence as the SERVER describes it: each label is read from the owner's own source row at read time, so a
+ * user-controlled label can never become evidence. A memory says what type it is (EXPERIENCE/LESSON), and a
+ * source that has since been retracted or removed is shown as such rather than dropped.
+ */
 export async function listEvidence(principalId: string, subjectKind: SubjectKind, subjectId: string) {
-  return getDb().evidenceLink.findMany({ where: { principalId, subjectKind, subjectId }, orderBy: { createdAt: "asc" }, take: 200 });
+  const db = getDb();
+  const links = await db.evidenceLink.findMany({ where: { principalId, subjectKind, subjectId }, orderBy: { createdAt: "asc" }, take: 200 });
+  const ids = (k: SourceKind) => links.filter((l) => l.sourceKind === k).map((l) => l.sourceId);
+  const where = (k: SourceKind) => ({ principalId, id: { in: ids(k) } });
+  const [results, decisions, memories, tasks, quests, sessions, readings, observations] = await Promise.all([
+    db.result.findMany({ where: where("RESULT"), select: { id: true, statement: true, value: true, unit: true } }),
+    db.decision.findMany({ where: where("DECISION"), select: { id: true, title: true } }),
+    db.memory.findMany({ where: where("MEMORY"), select: { id: true, content: true, type: true, status: true } }),
+    db.task.findMany({ where: where("TASK"), select: { id: true, title: true } }),
+    db.quest.findMany({ where: where("QUEST"), select: { id: true, title: true } }),
+    db.learningSession.findMany({ where: where("LEARNING_SESSION"), select: { id: true, minutes: true, studiedAt: true } }),
+    db.metricReading.findMany({ where: where("METRIC_READING"), select: { id: true, value: true, provenance: true, metric: { select: { name: true, unit: true } } } }),
+    db.experimentObservation.findMany({ where: where("OBSERVATION"), select: { id: true, text: true } }),
+  ]);
+  const by = <T extends { id: string }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]));
+  const R = by(results), D = by(decisions), M = by(memories), T = by(tasks), Q = by(quests), S = by(sessions), G = by(readings), O = by(observations);
+  return links.map((l) => {
+    let label: string | null = null;
+    let memoryType: string | null = null;
+    let retracted = false;
+    if (l.sourceKind === "RESULT") { const r = R.get(l.sourceId); if (r) label = clip(r.value !== null && r.unit ? `${r.statement} — ${r.value} ${r.unit}` : r.statement); }
+    else if (l.sourceKind === "DECISION") label = D.get(l.sourceId)?.title ?? null;
+    else if (l.sourceKind === "MEMORY") { const m = M.get(l.sourceId); if (m) { label = clip(m.content); memoryType = m.type; retracted = m.status === "RETRACTED"; } }
+    else if (l.sourceKind === "TASK") label = T.get(l.sourceId)?.title ?? null;
+    else if (l.sourceKind === "QUEST") label = Q.get(l.sourceId)?.title ?? null;
+    else if (l.sourceKind === "LEARNING_SESSION") { const x = S.get(l.sourceId); if (x) label = `${x.minutes} minutes studied on ${x.studiedAt.toISOString().slice(0, 10)}`; }
+    else if (l.sourceKind === "METRIC_READING") { const x = G.get(l.sourceId); if (x) label = `${x.metric.name}: ${x.value} ${x.metric.unit} (${x.provenance.toLowerCase().replace("_", " ")})`; }
+    else if (l.sourceKind === "OBSERVATION") { const x = O.get(l.sourceId); if (x) label = clip(x.text); }
+    return { ...l, label, memoryType, retracted };
+  });
 }
 
 export function summarizeEvidence(links: { stance: Stance }[]) {

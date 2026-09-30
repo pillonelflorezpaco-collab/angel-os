@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome } from "../guidehub/public/lib.js";
+import { GRADES, buildResultBody, withSuperseded, buildDecisionBody, canReview, canSupersede, decisionStatus, evidenceTag, pickerRow, resultLine, LIMITS, buildBody, dateToInstant, formatDateOnly, isTerminal, lifeOutcome, linkablePeople, parseRoute, projectTransitions, questTransitions, statusLabel, taskCountsLine, taskTransitions, approvalOutcome, countdown, learningLine, listFrom, memoryLine, progressLabel, riskLabel, sectionNotices, writeOutcome, hypothesisLabel, HYPOTHESIS_ORDER, isClosedExperiment, evidenceKindLabel, evidenceText, evidenceGroups, stateHeading, metricReadingLine, buildStateBody } from "../guidehub/public/lib.js";
 
 const PUB = path.resolve(import.meta.dirname, "../guidehub/public");
 const read = (f: string) => readFileSync(path.join(PUB, f), "utf-8");
@@ -266,7 +266,7 @@ describe("Decision rules (step 3)", () => {
 });
 
 describe("frontend safety (static checks)", () => {
-  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "lib.js"];
+  const FILES = ["app.js", "ui.js", "kit.js", "life.js", "decisions.js", "growth.js", "lib.js"];
   const all = FILES.map((f) => [f, read(f)] as const);
   const joined = all.map(([, src]) => src).join("\n");
   it("nothing from the API is ever parsed as HTML or executed", () => {
@@ -337,6 +337,74 @@ describe("frontend safety (static checks)", () => {
     expect(joined).not.toMatch(/"system\.decisions",\s*"(?!DECISION_RECORD|DECISION_REVIEW)/);
   });
   it("the shipped public directory contains only the expected static files", () => {
-    expect(readdirSync(PUB).sort()).toEqual(["app.js", "decisions.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
+    expect(readdirSync(PUB).sort()).toEqual(["app.js", "decisions.js", "growth.js", "index.html", "kit.js", "lib.d.ts", "lib.js", "life.js", "styles.css", "ui.js"]);
+  });
+});
+
+
+describe("Step 5: Future Self + Learning screens", () => {
+  const growth = read("growth.js");
+  const UUID = "0d3b9a3e-5f7c-4a3e-9d0e-1f2a3b4c5d6e";
+
+  it("routes: #/future-self and #/learning exactly; nothing else is a new view", () => {
+    expect(parseRoute("#/future-self")).toEqual({ view: "future" });
+    expect(parseRoute("#/learning")).toEqual({ view: "learning" });
+    for (const bad of ["#/future-self/", "#/future", "#/learning/x", `#/learning/${UUID}`, "#/Learning"]) expect(parseRoute(bad), bad).toEqual({ view: "today" });
+  });
+
+  it("every action the screens send is allowed by the proxy, and the exact read routes exist (default-deny elsewhere)", async () => {
+    const { matchRule } = await import("../guidehub/proxy.js");
+    const skills: Record<string, string> = { FUTURE: "system.future", LEARNING: "system.learning" };
+    const pairs = [...growth.matchAll(/\b(FUTURE|LEARNING),\s*"([A-Z_]+)"/g)].map((m) => [skills[m[1]], m[2]] as const);
+    expect(pairs.length).toBeGreaterThanOrEqual(8);
+    for (const [skill, name] of pairs) expect(matchRule("POST", `/api/actions/${skill}/${name}`), `${skill} ${name}`).toBeDefined();
+    for (const p of ["/api/future/aspirations", `/api/future/aspirations/${UUID}/states`, "/api/learning/topics", "/api/learning/sessions", "/api/learning/objectives", "/api/learning/experiments", `/api/learning/experiments/${UUID}`]) expect(matchRule("GET", p), p).toBeDefined();
+    // not reachable: the aspiration detail, closing/releasing aspirations, session/card/topic writes, anything wildcarded
+    for (const [m, p] of [["GET", `/api/future/aspirations/${UUID}`], ["GET", "/api/future/aspirations/x/states"], ["GET", "/api/learning/cards/x"], ["GET", "/api/learning/experiments/x"], ["GET", `/api/learning/experiments/${UUID}/x`], ["POST", "/api/actions/system.future/ASPIRATION_ACHIEVE"], ["POST", "/api/actions/system.future/ASPIRATION_UPDATE"], ["POST", "/api/actions/system.future/METRIC_CREATE"], ["POST", "/api/actions/system.learning/SESSION_LOG"], ["POST", "/api/actions/system.learning/CARD_REVIEW/x"], ["POST", "/api/learning/experiments"], ["GET", "/api/learning"], ["GET", "/api/future"]] as const)
+      expect(matchRule(m, p), `${m} ${p}`).toBeUndefined();
+  });
+
+  it("no score, level, XP, percentage or streak vocabulary appears in the new screens", () => {
+    expect(growth).not.toMatch(/\bxp\b|level|streak|score|badge|rank|\bprogress\b|Math\.round|%/i);
+    expect(growth).not.toMatch(/progressLabel/);
+  });
+
+  it("evidence is shown with the SERVER's label; the UI sends ids and stances, never labels or principals", () => {
+    const body = buildStateBody(UUID, { current: "c", gap: "", desired: "d", note: "" }, [{ sourceKind: "RESULT", sourceId: UUID, stance: "SUPPORTS", shown: "MY OWN LABEL", sub: "x" } as any]);
+    expect(body.errors).toEqual([]);
+    expect(body.body).toEqual({ aspirationId: UUID, current: "c", desired: "d", evidence: [{ sourceKind: "RESULT", sourceId: UUID, stance: "SUPPORTS" }] });
+    expect(JSON.stringify(body.body)).not.toContain("MY OWN LABEL");
+    expect(buildStateBody(UUID, { current: "c", desired: "d" }, []).errors).toContain("Add at least one piece of evidence.");
+    expect(buildStateBody(UUID, { current: "", desired: "" }, []).errors).toHaveLength(3);
+  });
+
+  it("lived evidence is distinguished from facts and inferences; no evidence is stated, never implied as contradiction", () => {
+    expect(evidenceKindLabel({ sourceKind: "MEMORY", memoryType: "EXPERIENCE" })).toBe("Lived experience");
+    expect(evidenceKindLabel({ sourceKind: "MEMORY", memoryType: "LESSON" })).toBe("Lesson");
+    for (const t of ["FACT", "INFERENCE", "PREFERENCE"]) expect(evidenceKindLabel({ sourceKind: "MEMORY", memoryType: t })).toMatch(/not lived evidence/);
+    expect(evidenceText({ label: "ran 5k" })).toBe("ran 5k");
+    expect(evidenceText({ label: null })).toBe("This source is no longer available.");
+    expect(evidenceText({ retracted: true, label: "x" })).toMatch(/retracted/);
+    expect(evidenceGroups([]).every((g) => g.items.length === 0)).toBe(true);
+    expect(evidenceGroups([{ stance: "CONTRADICTS" }, { stance: "SUPPORTS" }, { stance: "SUPPORTS" }]).map((g) => g.items.length)).toEqual([2, 1, 0]);
+    expect(growth.match(/No evidence is recorded\./g)?.length).toBeGreaterThanOrEqual(2); // objectives and the evidence list both say it
+    expect(growth).toContain('h("p", { class: "muted", text: "No evidence is recorded." })');
+    expect(growth).not.toMatch(/no contradict|not contradict|uncontradict/i); // silence is never a finding
+  });
+
+  it("history reads as history; readings are stated, not graded; hypothesis states are words", () => {
+    const s = (basis: string) => ({ basis, createdAt: "2026-03-01T00:00:00.000Z" });
+    expect(stateHeading(s("INITIAL"), 0, 2)).toBe("Starting state recorded on Mar 1, 2026 — earlier");
+    expect(stateHeading(s("EVIDENCED"), 1, 2)).toMatch(/Updated state recorded on .* — latest$/);
+    expect(metricReadingLine({ latest: null, unit: "km" })).toBe("No readings recorded yet.");
+    expect(metricReadingLine({ latest: 0, unit: "km", lastObservedAt: "2026-03-01T00:00:00.000Z" })).toMatch(/^Latest recorded reading: 0 km on/); // zero is a reading
+    expect(HYPOTHESIS_ORDER.map(hypothesisLabel).every((t) => !/\d/.test(t))).toBe(true);
+    expect(isClosedExperiment("CONFIRMED") && isClosedExperiment("REJECTED")).toBe(true);
+    for (const open of ["CANDIDATE", "OBSERVED", "SUPPORTED"]) expect(isClosedExperiment(open)).toBe(false);
+  });
+
+  it("no rule is re-implemented in the browser: the screens never compare evidence counts or gate transitions themselves", () => {
+    expect(growth).not.toMatch(/observations?\.length\s*[<>=]|supports\s*[<>=]|CONFIRM_MIN|transitionRefusal/);
+    expect(growth).not.toMatch(/ASPIRATION_ACHIEVE|ASPIRATION_RELEASE|ASPIRATION_UPDATE|CARD_|SESSION_LOG/);
   });
 });

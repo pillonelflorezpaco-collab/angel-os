@@ -78,3 +78,12 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 
 .compare { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; } @media (max-width: 800px) { .compare { grid-template-columns: 1fr; } }
 h3 { font-size: .95rem; margin: 12px 0 4px; color: var(--muted); font-weight: 600; }
 .errors { margin: 8px 0; padding-left: 20px; color: var(--bad); }
+
+/* Step 5: Future Self + Learning */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.5rem 0; }
+.facts dt { font-weight: 600; }
+.facts dd { margin: 0; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.timeline li { border-left: 3px solid var(--line); padding-left: 0.75rem; }
+.timeline li.historical { opacity: 0.8; }
+@media (max-width: 600px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: 0.4rem; } }

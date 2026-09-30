@@ -105,7 +105,10 @@ async function withProgress(db: Db, principalId: string, aspirations: { id: stri
 export async function futureOverview(principalId: string) {
   const db = getDb();
   const rows = await db.aspiration.findMany({ where: { principalId, status: "ACTIVE" }, orderBy: { createdAt: "asc" }, take: 100 });
-  return withProgress(db, principalId, rows);
+  const withP = await withProgress(db, principalId, rows);
+  const tasks = await db.task.findMany({ where: { principalId, id: { in: rows.flatMap((r) => (r.nextTaskId ? [r.nextTaskId] : [])) } }, select: { id: true, title: true, status: true } });
+  const quests = await db.quest.findMany({ where: { principalId, id: { in: rows.flatMap((r) => (r.nextQuestId ? [r.nextQuestId] : [])) } }, select: { id: true, title: true, status: true } });
+  return withP.map((a) => { const row = rows.find((r) => r.id === a.id)!; return { ...a, nextTask: tasks.find((t) => t.id === row.nextTaskId) ?? null, nextQuest: quests.find((q) => q.id === row.nextQuestId) ?? null }; });
 }
 
 export async function getAspiration(principalId: string, id: string) {
@@ -113,5 +116,9 @@ export async function getAspiration(principalId: string, id: string) {
   const row = await db.aspiration.findFirst({ where: { id, principalId } });
   if (!row) throw new LifeNotFoundError("aspiration");
   const [withP] = await withProgress(db, principalId, [row]);
-  return withP;
+  const [nextTask, nextQuest] = await Promise.all([
+    row.nextTaskId ? db.task.findFirst({ where: { id: row.nextTaskId, principalId }, select: { id: true, title: true, status: true } }) : null,
+    row.nextQuestId ? db.quest.findFirst({ where: { id: row.nextQuestId, principalId }, select: { id: true, title: true, status: true } }) : null,
+  ]);
+  return { ...withP, nextTask, nextQuest };
 }

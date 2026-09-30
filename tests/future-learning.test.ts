@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, disconnectDb } from "../db/client/index.js";
 import { JARVIS_AGENT_KEY } from "../core/index.js";
 import { registerSkillActions, PRODUCTION_DEFINITIONS } from "../skills/manifest.js";
-import { proposeFuture, readStateTimeline } from "../skills/system/future.js";
-import { proposeLearning, readExperiment } from "../skills/system/learning.js";
+import { proposeFuture, readStateTimeline, readFutureOverview } from "../skills/system/future.js";
+import { proposeLearning, readExperiment, readSessions } from "../skills/system/learning.js";
 import { transitionRefusal, CONFIRM_MIN } from "../learning/hypothesis.js";
 import { recordState } from "../future/store.js";
 import { getMemoryProvider } from "../memory/index.js";
@@ -202,5 +202,35 @@ describe("Future Self states + Learning experiments: evidence-gated, append-only
     const rd = await ok("future", "METRIC_READING_RECORD", { metricId: m.id, value: 0, provenance: "MEASURED" });
     expect(rd).toMatchObject({ value: 0, provenance: "MEASURED" });
     await failed("future", "METRIC_READING_RECORD", { metricId: m.id, value: 1, provenance: "MAGIC" });
+  });
+
+  it("cockpit reads: evidence labels come from the owner's own rows, lessons/sessions/next-action are scoped, nothing crosses principals", async () => {
+    const task = await db().task.create({ data: { principalId: a, title: "Buy shoes" } });
+    const asp = await ok("future", "ASPIRATION_CREATE", { title: `cr-${Math.random()}`, current: "c", desired: "d", nextTaskId: task.id });
+    const mem = getMemoryProvider();
+    const exp = await mem.addMemory({ principalId: a, type: "EXPERIENCE", content: "ran 5k at dawn", source: "t" });
+    const r = await result(a);
+    await ok("future", "ASPIRATION_STATE_RECORD", { aspirationId: asp.id, current: "x", desired: "y", evidence: [{ sourceKind: "MEMORY", sourceId: exp.id, stance: "SUPPORTS" }, { sourceKind: "RESULT", sourceId: r.id, stance: "CONTEXT", note: "n" }] });
+    const tl = (await readStateTimeline(idA(), { agentKey: JARVIS_AGENT_KEY, aspirationId: asp.id })).data as any[];
+    const ev = tl[1].evidence;
+    expect(ev.find((e: any) => e.sourceKind === "MEMORY")).toMatchObject({ label: "ran 5k at dawn", memoryType: "EXPERIENCE", retracted: false });
+    expect(ev.find((e: any) => e.sourceKind === "RESULT").label).toBe("ran 5k — 5 km");
+    const overview = (await readFutureOverview(idA(), { agentKey: JARVIS_AGENT_KEY })).data as any[];
+    expect(overview.find((x) => x.id === asp.id).nextTask).toMatchObject({ title: "Buy shoes" });
+    // a retracted memory is still shown, as retracted, never silently dropped
+    await mem.retractMemory(a, exp.id, "test");
+    const again = (await readStateTimeline(idA(), { agentKey: JARVIS_AGENT_KEY, aspirationId: asp.id })).data as any[];
+    expect(again[1].evidence.find((e: any) => e.sourceKind === "MEMORY").retracted).toBe(true);
+    // sessions are the caller's own
+    const topic = await ok("learning", "TOPIC_CREATE", { title: "Spanish" });
+    await ok("learning", "SESSION_LOG", { topicId: topic.id, minutes: 20 });
+    expect(((await readSessions(idA(), { agentKey: JARVIS_AGENT_KEY })).data as any[]).some((x) => x.topicTitle === "Spanish" && x.minutes === 20)).toBe(true);
+    expect(((await readSessions(idB(), { agentKey: JARVIS_AGENT_KEY })).data as any[]).some((x) => x.topicTitle === "Spanish")).toBe(false);
+    // a lesson shows on its experiment, only for the owner
+    const e = await ok("learning", "EXPERIMENT_CREATE", { hypothesis: "h2", method: "m" });
+    await ok("learning", "EXPERIMENT_OBSERVE", { experimentId: e.id, text: "saw it" });
+    await ok("learning", "LESSON_RECORD", { experimentId: e.id, content: "worked for me" });
+    expect(((await readExperiment(idA(), { agentKey: JARVIS_AGENT_KEY, experimentId: e.id })).data as any).lessons.map((l: any) => l.content)).toEqual(["worked for me"]);
+    expect((await readExperiment(idB(), { agentKey: JARVIS_AGENT_KEY, experimentId: e.id })).status).toBe("FAILED");
   });
 });

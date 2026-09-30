@@ -125,3 +125,9 @@ export async function learningOverview(principalId: string, now = new Date()) {
     };
   });
 }
+
+/** Recent study sessions (self-reported, append-only), newest first, with the topic title. */
+export async function listSessions(principalId: string, limit = 50) {
+  const rows = await getDb().learningSession.findMany({ where: { principalId }, orderBy: { studiedAt: "desc" }, take: limit, include: { topic: { select: { title: true } } } });
+  return rows.map(({ topic, ...s }) => ({ ...s, topicTitle: topic.title }));
+}

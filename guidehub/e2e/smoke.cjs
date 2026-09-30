@@ -18,10 +18,11 @@ const URL_ = process.env.GUIDEHUB_E2E_URL || "http://127.0.0.1:3100";
 const API = process.env.GUIDEHUB_E2E_API || "http://localhost:3000";
 const TOKEN = process.env.GUIDEHUB_E2E_API_TOKEN;
 const PASSPHRASE = process.env.GUIDEHUB_E2E_PASSPHRASE;
+const TOKEN_B = process.env.GUIDEHUB_E2E_API_TOKEN_B; // optional: a SECOND principal, used only for the cross-principal checks
 require("node:fs").mkdirSync(SP, { recursive: true });
 
-async function act(skillAction, body) {
-  const r = await fetch(`${API}/api/actions/${skillAction}`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+async function act(skillAction, body, token = TOKEN) {
+  const r = await fetch(`${API}/api/actions/${skillAction}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
   if (!(j.status === "EXECUTED" || j.status === "PENDING_APPROVAL")) throw new Error(`seed ${skillAction} failed: ${j.message}`);
   return j.data;
@@ -33,7 +34,7 @@ async function seed() {
   await act("system.tasks/CREATE_TASK", { title: "<img src=x onerror=alert(1)> hostile task title" });
   await act("system.life/GOAL_CREATE", { title: `Ship Angel OS ${stamp}`, horizon: "LONG" });
   const asp = await act("system.future/ASPIRATION_CREATE", { title: `Run a 10k ${stamp}`, current: "out of shape", desired: "run 10k" });
-  await act("system.future/METRIC_CREATE", { aspirationId: asp.id, name: "km", unit: "km", baseline: 0, target: 10 });
+  await act("system.future/METRIC_CREATE", { aspirationId: asp.id, name: "km", unit: "km", definition: "kilometres run in one go", baseline: 0, target: 10 });
   await act("system.decisions/DECISION_RECORD", { title: `Second look ${stamp}`, decision: "Hire a contractor", expected: "shipped sooner", reviewAt: "2020-03-01T00:00:00.000Z" }); // OLDER than the next one, so the Today flow (newest first) reviews that one and this one stays due for the Decisions screen
   await act("system.decisions/DECISION_RECORD", { title: `Adopt a cockpit ${stamp}`, decision: "Build it", expected: "faster reviews", reviewAt: "2020-01-01T00:00:00.000Z" });
   const topic = await act("system.learning/TOPIC_CREATE", { title: `Spanish ${stamp}` });
@@ -42,7 +43,33 @@ async function seed() {
   await act("system.tasks/CREATE_TASK", { title: `Try decaf ${stamp}` });
   const person = await act("system.life/PERSON_CREATE", { name: `Temp person ${stamp}` });
   await act("system.life/PERSON_DELETE", { personId: person.id }); // SENSITIVE: waits for approval in the cockpit
+  await seedGrowth(stamp);
 }
+
+// Step 5 fixtures: an aspiration with an evidenced state history, an objective, experiments (one with an observation, evidence and a lesson), a study session.
+const growth = {};
+async function seedGrowth(stamp) {
+  const goal = await act("system.life/GOAL_CREATE", { title: `Growth goal ${stamp}` });
+  const asp = await act("system.future/ASPIRATION_CREATE", { title: `Future ${stamp}`, current: "I walk twice a week", gap: "no routine yet", desired: "walk daily" });
+  const result = await act("system.life/RESULT_RECORD", { subjectKind: "GOAL", subjectId: goal.id, statement: `Walked five days ${stamp}` });
+  const lived = await act("system.memory/MEMORY_CREATE", { type: "EXPERIENCE", content: `Morning walks felt easier ${stamp}`, source: "e2e" });
+  await act("system.future/ASPIRATION_STATE_RECORD", { aspirationId: asp.id, current: "I walk five days a week", gap: "weekends", desired: "walk daily", note: "after a good week",
+    evidence: [{ sourceKind: "RESULT", sourceId: result.id, stance: "SUPPORTS" }, { sourceKind: "MEMORY", sourceId: lived.id, stance: "SUPPORTS" }] });
+  growth.aspiration = asp;
+  await act("system.learning/OBJECTIVE_CREATE", { title: `Hold a conversation ${stamp}`, evidenceStandard: "Ten minutes without switching language" });
+  const e1 = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Morning study sticks better ${stamp}`, method: "30 minutes at 7am for a week" });
+  const obs = await act("system.learning/EXPERIMENT_OBSERVE", { experimentId: e1.id, text: `Recalled more words after morning study ${stamp}` });
+  await act("system.future/EVIDENCE_ATTACH", { subjectKind: "EXPERIMENT", subjectId: e1.id, sourceKind: "MEMORY", sourceId: lived.id, stance: "CONTEXT", note: "same week" });
+  await act("system.future/EVIDENCE_ATTACH", { subjectKind: "EXPERIMENT", subjectId: e1.id, sourceKind: "OBSERVATION", sourceId: obs.id, stance: "SUPPORTS" });
+  await act("system.learning/EXPERIMENT_TRANSITION", { experimentId: e1.id, to: "OBSERVED", note: "first look" });
+  await act("system.learning/LESSON_RECORD", { experimentId: e1.id, content: `For me, mornings worked in that week ${stamp}` });
+  growth.observed = e1;
+  growth.candidate = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Evening flashcards help ${stamp}`, method: "10 cards after dinner" });
+  const topic = await act("system.learning/TOPIC_CREATE", { title: `Italian ${stamp}` });
+  await act("system.learning/SESSION_LOG", { topicId: topic.id, minutes: 25, note: "verbs" });
+  if (TOKEN_B) growth.foreign = await act("system.learning/EXPERIMENT_CREATE", { hypothesis: `Someone else's experiment ${stamp}`, method: "private" }, TOKEN_B);
+}
+let crashPage = null; // for a screenshot if the run crashes
 const results = [];
 const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`); };
 
@@ -52,8 +79,9 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "light" });
   const page = await ctx.newPage();
+  crashPage = page;
   const problems = []; let probing = false;
-  page.on("console", (m) => { if (["error", "warning"].includes(m.type()) && !(probing && m.text().includes("401"))) problems.push(`${m.type()}: ${m.text()} @${m.location().url}`); });
+  page.on("console", (m) => { if (["error", "warning"].includes(m.type()) && !(probing && /status of 4\d\d/.test(m.text()))) problems.push(`${m.type()}: ${m.text()} @${m.location().url}`); });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   let dialogs = 0; page.on("dialog", async (d) => { dialogs++; await d.dismiss(); });
 
@@ -298,8 +326,7 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await lb.getByLabel("What actually happened?").fill("I sleep better");
   await lb.getByLabel("What did you learn? (optional)").fill("Caffeine after noon is the problem");
   await lb.getByRole("button", { name: "Record the look-back" }).click();
-  await page.waitForSelector("text=You expected");
-  await page.waitForSelector("text=What happened");
+  await page.waitForSelector(".compare"); // the comparison itself, not text that the form also contains
   const cmp = page.locator(".compare");
   check("look-back shows what you expected next to what happened", (await cmp.textContent()).includes("Better sleep in two weeks") && (await cmp.textContent()).includes("I sleep better"));
   await page.waitForFunction(() => !document.body.innerText.includes("Record the look-back"));
@@ -327,6 +354,79 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   check("in the list the replaced decision is marked replaced", (await allRow.textContent()).includes("Replaced by a newer decision"));
   await page.screenshot({ path: `${SP}/13-decisions-after.png`, fullPage: true });
 
+  // ── Step 5: Future Self + Learning ───────────────────────────────────────
+  await page.getByRole("link", { name: "Future Self", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Future Self')");
+  const fcard = page.locator(`article[data-aspiration="${growth.aspiration.id}"]`);
+  await fcard.waitFor();
+  const cardText = await fcard.textContent();
+  check("Future Self: the aspiration shows current, desired and gap in neutral words", ["Current state recorded", "I walk five days a week", "Desired state", "walk daily", "Gap", "weekends"].every((t) => cardText.includes(t)));
+  check("Future Self: supporting evidence is shown with the server's own labels and kinds", cardText.includes("Supporting evidence") && cardText.includes(`Walked five days ${STAMP}`) && cardText.includes("Lived experience") && cardText.includes(`Morning walks felt easier ${STAMP}`));
+  check("Future Self: state history lists the starting state as earlier and the updated one as latest", cardText.includes("Starting state recorded") && cardText.includes("— earlier") && cardText.includes("Updated state recorded") && cardText.includes("— latest") && cardText.includes("I walk twice a week"));
+  check("Future Self: no score, percentage, level or XP anywhere on the screen", !/(\d\s?%|\bxp\b|\blevel\b|\bscore\b|streak)/i.test(await page.textContent("main")));
+  const other = page.locator("article.aspiration", { hasText: `Run a 10k ${STAMP}` });
+  check("Future Self: an aspiration with no evidence says so, and does not imply contradiction", (await other.textContent()).includes("no evidence attached") && !(await other.textContent()).includes("Contradicting"));
+  check("Future Self: a defined measure shows its definition and no percentage", (await other.textContent()).includes("kilometres run in one go") && (await other.textContent()).includes("No readings recorded yet."));
+  await page.screenshot({ path: `${SP}/14-future-self.png`, fullPage: true });
+  // recording a state needs evidence; the UI asks, and the server has the final word
+  await fcard.getByRole("button", { name: "Record an updated state" }).click();
+  const sf = fcard.locator("form").filter({ has: page.getByRole("button", { name: "Record updated state" }) });
+  await sf.getByLabel("Current state, in your words").fill("I walk every day");
+  await sf.getByRole("button", { name: "Record updated state" }).click();
+  check("Future Self: an update without evidence is refused with a clear message", (await sf.textContent()).includes("Add at least one piece of evidence."));
+  await sf.getByRole("button", { name: "Show my results" }).click();
+  await sf.getByRole("button", { name: new RegExp(`Use as evidence: Walked five days ${STAMP}`) }).click();
+  await sf.getByLabel("How does this evidence relate?").selectOption("SUPPORTS");
+  await sf.getByRole("button", { name: "Record updated state" }).click();
+  await page.waitForFunction((id) => document.querySelectorAll(`article[data-aspiration="${id}"] .timeline > li`).length === 3, growth.aspiration.id, { timeout: 8000 });
+  check("Future Self: the update added a third dated state; earlier states are unchanged", (await fcard.textContent()).includes("I walk twice a week") && (await fcard.textContent()).includes("I walk every day"));
+
+  await page.getByRole("link", { name: "Learning", exact: true }).click();
+  await page.waitForSelector("h1:has-text('Learning')");
+  await page.waitForSelector(`text=Hold a conversation ${STAMP}`);
+  const lmain = await page.textContent("main");
+  check("Learning: objectives load with the owner's evidence standard", lmain.includes("Your evidence standard: Ten minutes without switching language") && lmain.includes("No evidence is recorded."));
+  check("Learning: experiments load with their hypothesis status in words", lmain.includes("Candidate — proposed") && lmain.includes("Observed — something was seen"));
+  check("Learning: self-reported study sessions are listed", lmain.includes(`25 minutes on Italian ${STAMP}`) && lmain.includes("Self-reported"));
+  const det = page.locator(`details[data-experiment="${growth.observed.id}"]`);
+  await det.locator("summary").click();
+  await det.getByRole("heading", { name: "Observations" }).waitFor();
+  const dt = await det.textContent();
+  check("Learning: an experiment shows method, observation, evidence with kinds, review history and lesson", [`Method: 30 minutes at 7am for a week`, `Recalled more words after morning study ${STAMP}`, "Observation", "Lived experience", "Context only", "Supporting evidence", "Review history", `For me, mornings worked in that week ${STAMP}`].every((t) => dt.includes(t)));
+  // the server, not the browser, decides whether a review is allowed
+  const cand = page.locator(`details[data-experiment="${growth.candidate.id}"]`);
+  await cand.locator("summary").click();
+  await cand.getByLabel("Move to").selectOption("CONFIRMED");
+  probing = true; // the server is EXPECTED to refuse this with a 4xx
+  await cand.getByRole("button", { name: "Record review" }).click();
+  await cand.locator(".outcome.bad").waitFor(); await page.waitForTimeout(200); probing = false;
+  check("Learning: an evidence-less confirmation is refused and the server's own explanation is shown", (await cand.locator(".outcome.bad").textContent()).includes("can't go from candidate to confirmed"));
+  check("Learning: the refused experiment is still a candidate", (await page.locator(`details[data-experiment="${growth.candidate.id}"] summary`).textContent()).toLowerCase().includes("candidate"));
+  await page.screenshot({ path: `${SP}/15-learning.png`, fullPage: true });
+
+  // security, from inside the signed-in browser: only allow-listed routes exist, and another principal's data is unreachable
+  const probe = (method, path, body) => page.evaluate(async ([m, p, b]) => { const r = await fetch(p, { method: m, headers: { "X-Requested-With": "guidehub-cockpit", "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined }); return r.status; }, [method, path, body]);
+  probing = true;
+  check("Security: a route that is not on the allow-list is 404 (aspiration detail, audit, reviews)", (await probe("GET", `/api/future/aspirations/${growth.aspiration.id}`)) === 404 && (await probe("GET", "/api/audit")) === 404 && (await probe("GET", "/api/reviews")) === 404);
+  check("Security: actions that have no screen are 404 (achieve, update, session log, fcard review with a suffix)", (await probe("POST", "/api/actions/system.future/ASPIRATION_ACHIEVE", {})) === 404 && (await probe("POST", "/api/actions/system.future/ASPIRATION_UPDATE", {})) === 404 && (await probe("POST", "/api/actions/system.learning/SESSION_LOG", {})) === 404);
+  check("Security: an experiment id needs to be a UUID and the wildcard forms are 404", (await probe("GET", "/api/learning/experiments/not-a-uuid")) === 404 && (await probe("GET", `/api/learning/experiments/${growth.observed.id}/x`)) === 404 && (await probe("GET", "/api/learning/cards/x")) === 404);
+  if (growth.foreign) {
+    const st = await probe("GET", `/api/learning/experiments/${growth.foreign.id}`);
+    check("Security: another principal's experiment is unreachable (same answer as a missing one)", st === 404 || st === 403);
+    const st2 = await probe("POST", "/api/actions/system.learning/EXPERIMENT_OBSERVE", { experimentId: growth.foreign.id, text: "intruder" });
+    check("Security: writing to another principal's experiment fails", st2 !== 200 && st2 !== 202);
+    check("Security: their experiment never appears in this owner's list", !(await page.evaluate(async () => JSON.stringify(await (await fetch("/api/learning/experiments", { headers: { "X-Requested-With": "guidehub-cockpit" } })).json()))).includes("Someone else's experiment"));
+  }
+  await page.waitForTimeout(300); probing = false;
+  const anon = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ap = await anon.newPage(); await ap.goto(`${URL_}/`);
+  probing = true;
+  const anonStatuses = await ap.evaluate(async () => Promise.all(["/api/future/aspirations", "/api/learning/objectives", "/api/learning/experiments"].map(async (p) => (await fetch(p, { headers: { "X-Requested-With": "guidehub-cockpit" } })).status)));
+  check("Security: signed out, the new read routes answer 401", anonStatuses.every((c) => c === 401), anonStatuses.join(","));
+  await anon.close(); probing = false;
+  await page.evaluate(() => { location.hash = "#/learning/not-a-view"; }); await page.waitForSelector("#briefing h1");
+  check("Security: an unknown hash view falls back to Today, not to a data screen", true);
+
   await page.getByRole("link", { name: "Today", exact: true }).click();
   await page.waitForSelector("#briefing h1");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -338,6 +438,12 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   await page.getByRole("link", { name: "Decisions", exact: true }).click(); await page.waitForSelector("h1:has-text('Decisions')"); await page.waitForTimeout(400);
   check("Decisions has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
   await page.screenshot({ path: `${SP}/12-decisions-mobile.png`, fullPage: true });
+  await page.getByRole("link", { name: "Future Self", exact: true }).click(); await page.waitForSelector("h1:has-text('Future Self')"); await page.waitForSelector("article.aspiration"); await page.waitForTimeout(400);
+  check("Future Self has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
+  await page.screenshot({ path: `${SP}/16-future-mobile.png`, fullPage: true });
+  await page.getByRole("link", { name: "Learning", exact: true }).click(); await page.waitForSelector("h1:has-text('Learning')"); await page.waitForSelector("section:has-text('Objectives')"); await page.waitForTimeout(400);
+  check("Learning has no horizontal scroll at phone width", !(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)));
+  await page.screenshot({ path: `${SP}/17-learning-mobile.png`, fullPage: true });
   await page.getByRole("link", { name: "Today", exact: true }).click(); await page.waitForSelector("#briefing h1");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   check("no horizontal scroll at phone width", !overflow);
@@ -353,10 +459,16 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
   const p2 = await ctxDark.newPage(); await p2.goto(`${URL_}/`); await p2.waitForSelector("form.signin");
   await p2.fill("#pass", PASSPHRASE); await p2.click("button[type=submit]"); await p2.waitForSelector("#briefing h1"); await p2.waitForTimeout(500);
   await p2.screenshot({ path: `${SP}/5-today-dark.png` });
+  await p2.goto(`${URL_}/#/future-self`); await p2.waitForSelector("h1:has-text('Future Self')"); await p2.waitForSelector("article.aspiration"); await p2.waitForTimeout(300);
+  await p2.screenshot({ path: `${SP}/18-future-dark.png` });
+  const bgDark = await p2.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await p2.goto(`${URL_}/#/learning`); await p2.reload(); await p2.waitForSelector("h1:has-text('Learning')"); await p2.waitForTimeout(300);
+  await p2.screenshot({ path: `${SP}/19-learning-dark.png` });
+  check("dark mode: Future Self and Learning render on a dark background", /rgb\((\d+), (\d+), (\d+)\)/.test(bgDark) && Number(/rgb\((\d+)/.exec(bgDark)[1]) < 60, bgDark);
 
   check("no console errors / CSP violations", problems.length === 0, problems.join(" | "));
   await browser.close();
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   process.exit(failed.length ? 1 : 0);
-})().catch((e) => { console.error("E2E crashed:", e.message); process.exit(2); });
+})().catch(async (e) => { console.error("E2E crashed:", e.message); try { if (crashPage) { await crashPage.screenshot({ path: `${SP}/crash.png`, fullPage: true }); console.error((await crashPage.textContent("main")).slice(0, 600)); } } catch { /* best effort */ } process.exit(2); });
